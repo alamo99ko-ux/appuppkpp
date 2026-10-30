@@ -235,7 +235,7 @@ const MainContent: React.FC = () => {
               className="inline-flex items-center gap-1 text-slate-500 hover:text-indigo-600 font-semibold cursor-pointer"
             >
               <Lock className="w-3 h-3" />
-              <span>6자리 비밀번호 잠금화면 열기</span>
+              <span>8자리 비밀번호 잠금화면 열기</span>
             </button>
             <span>·</span>
             <span>Excel / PDF Export & 양식 Import 지원</span>

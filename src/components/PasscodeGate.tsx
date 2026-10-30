@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { UserRole } from '../types';
 import { Lock, ShieldCheck, Delete, GraduationCap, UserCircle, Settings, KeyRound, CheckCircle2 } from 'lucide-react';
 
 export const PasscodeGate: React.FC = () => {
   const {
-    passcode,
+    passcodes,
     unlockApp,
     role,
     setRole,
@@ -25,12 +26,21 @@ export const PasscodeGate: React.FC = () => {
     setRole('student');
   }, [setRole]);
 
+  const currentExpectedPin = passcodes[role] || '12345678';
+  const roleLabel = role === 'student' ? '학생' : role === 'instructor' ? '교관' : '관리자';
+
+  const handleSelectRole = (nextRole: UserRole) => {
+    setRole(nextRole);
+    setPin('');
+    setError(null);
+  };
+
   const handleDigit = (digit: string) => {
     setError(null);
-    if (pin.length < 6) {
+    if (pin.length < 8) {
       const next = pin + digit;
       setPin(next);
-      if (next.length === 6) {
+      if (next.length === 8) {
         attemptUnlock(next);
       }
     }
@@ -47,11 +57,11 @@ export const PasscodeGate: React.FC = () => {
   };
 
   const attemptUnlock = (candidate: string) => {
-    const ok = unlockApp(candidate);
+    const ok = unlockApp(candidate, role);
     if (ok) {
-      addAccessLog('6자리 보안 비밀번호 인증 및 시스템 최초 접속');
+      addAccessLog(`8자리 보안 비밀번호 인증 및 ${roleLabel} 모드 접속`);
     } else {
-      setError('비밀번호 6자리가 일치하지 않습니다. 다시 입력해주세요.');
+      setError(`${roleLabel} 접속 8자리 비밀번호가 일치하지 않습니다. 다시 입력해주세요.`);
       setTimeout(() => setPin(''), 400);
     }
   };
@@ -69,7 +79,7 @@ export const PasscodeGate: React.FC = () => {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [pin, passcode]);
+  }, [pin, currentExpectedPin, role]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4 relative">
@@ -86,10 +96,10 @@ export const PasscodeGate: React.FC = () => {
             </span>
           </div>
           <h1 className="text-xl font-bold text-white">
-            보안 접속 · 6자리 비밀번호 입력
+            보안 접속 · 8자리 비밀번호 입력
           </h1>
           <p className="text-xs text-slate-400">
-            별도 아이디 없이 <strong>숫자 6자리 비밀번호</strong>만 입력하면 즉시 시스템에 접속됩니다.
+            별도 아이디 없이 <strong>{roleLabel} 전용 8자리 숫자 비밀번호</strong>를 입력하면 즉시 시스템에 접속됩니다.
           </p>
         </div>
 
@@ -97,14 +107,14 @@ export const PasscodeGate: React.FC = () => {
         <div className="space-y-2.5">
           <div className="flex items-center justify-between text-[11px] text-slate-400">
             <span className="font-bold text-slate-300">1. 접속 모드</span>
-            <span className="text-slate-500 text-[10px]">기본: 학생 접속</span>
+            <span className="text-slate-500 text-[10px]">기본: 학생 접속 (8자리)</span>
           </div>
 
           <div className="flex items-stretch gap-2.5">
             {/* 기본 메인: 학생으로 접속 */}
             <button
               type="button"
-              onClick={() => setRole('student')}
+              onClick={() => handleSelectRole('student')}
               className={`flex-1 p-4 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between ${
                 role === 'student'
                   ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-950/60'
@@ -147,7 +157,7 @@ export const PasscodeGate: React.FC = () => {
             {/* 오른쪽: 교관 접속 (작고 희미하게 표시, 선택 시 활성화) */}
             <button
               type="button"
-              onClick={() => setRole('instructor')}
+              onClick={() => handleSelectRole('instructor')}
               title="교관으로 접속 전환"
               className={`px-3 py-2 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center justify-center shrink-0 min-w-[84px] ${
                 role === 'instructor'
@@ -168,11 +178,11 @@ export const PasscodeGate: React.FC = () => {
             <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-amber-950/40 border border-amber-700/50 text-amber-200 text-xs">
               <div className="flex items-center gap-2">
                 <Settings className="w-4 h-4 text-amber-400" />
-                <span className="font-bold">관리자 접속 모드가 선택되었습니다</span>
+                <span className="font-bold">관리자 접속 모드가 선택되었습니다 (8자리 비밀번호 입력)</span>
               </div>
               <button
                 type="button"
-                onClick={() => setRole('student')}
+                onClick={() => handleSelectRole('student')}
                 className="text-[11px] underline text-amber-300 hover:text-white cursor-pointer"
               >
                 학생 모드로 돌아가기
@@ -237,20 +247,20 @@ export const PasscodeGate: React.FC = () => {
           )}
         </div>
 
-        {/* 2. 6자리 비밀번호 입력 박스 */}
+        {/* 2. 8자리 비밀번호 입력 박스 */}
         <div className="space-y-3">
           <div className="text-[11px] font-bold text-slate-400 text-center">
-            2. 비밀번호 6자리 입력 (키보드 또는 아래 숫자 버튼 클릭)
+            2. {roleLabel} 비밀번호 8자리 입력 (키보드 또는 아래 숫자 버튼 클릭)
           </div>
 
-          <div className="flex items-center justify-center gap-2 sm:gap-3">
-            {[0, 1, 2, 3, 4, 5].map((index) => {
+          <div className="grid grid-cols-8 gap-1.5 sm:gap-2 max-w-md mx-auto">
+            {[0, 1, 2, 3, 4, 5, 6, 7].map((index) => {
               const char = pin[index];
               const isCurrent = index === pin.length;
               return (
                 <div
                   key={index}
-                  className={`w-11 h-13 sm:w-12 sm:h-14 rounded-xl border-2 flex items-center justify-center text-xl font-mono font-bold transition-all ${
+                  className={`h-12 sm:h-13 rounded-xl border-2 flex items-center justify-center text-lg font-mono font-bold transition-all ${
                     char
                       ? 'bg-indigo-950/80 border-indigo-500 text-white shadow-inner'
                       : isCurrent
@@ -312,23 +322,23 @@ export const PasscodeGate: React.FC = () => {
             <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
               <KeyRound className="w-3.5 h-3.5 text-amber-400" />
               <span>
-                현재 6자리 비밀번호: <strong className="font-mono text-amber-300">{passcode}</strong>
+                {roleLabel} 8자리 비밀번호 안내: <strong className="font-mono text-amber-300">{currentExpectedPin}</strong>
               </span>
             </div>
             <button
               type="button"
-              onClick={() => attemptUnlock(passcode)}
+              onClick={() => attemptUnlock(currentExpectedPin)}
               className="px-2.5 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/40 text-indigo-300 font-bold text-[11px] inline-flex items-center gap-1 transition-colors cursor-pointer"
             >
               <ShieldCheck className="w-3 h-3" />
-              <span>비밀번호 즉시 입력 접속</span>
+              <span>{roleLabel} 비밀번호 즉시 입력 접속</span>
             </button>
           </div>
 
           {/* 우측 아래쪽: 관리자 접속 (작고 희미하게 처리) */}
           <button
             type="button"
-            onClick={() => setRole('admin')}
+            onClick={() => handleSelectRole('admin')}
             title="관리자 접속 모드로 전환"
             className={`px-2.5 py-1 rounded-lg text-[10px] font-medium flex items-center gap-1 transition-all cursor-pointer border ${
               role === 'admin'

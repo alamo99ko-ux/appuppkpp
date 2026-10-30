@@ -105,12 +105,14 @@ export interface AppContextType {
   enrollments: Enrollment[];
   waitlists: WaitlistEntry[];
   
-  // 6-digit Passcode Security Gate
+  // 8-digit Role Passcode Security Gate
   passcode: string;
+  passcodes: Record<UserRole, string>;
   isUnlocked: boolean;
-  unlockApp: (pin: string) => boolean;
+  unlockApp: (pin: string, targetRole?: UserRole) => boolean;
   lockApp: () => void;
-  updatePasscode: (newPin: string) => { success: boolean; message: string };
+  updatePasscode: (newPin: string, targetRole?: UserRole) => { success: boolean; message: string };
+  updateRolePasscode: (targetRole: UserRole, newPin: string) => { success: boolean; message: string };
 
   // Training Programs (5+ 교육과정)
   programs: TrainingProgram[];
@@ -218,12 +220,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return localStorage.getItem('classtime_theme') === 'dark';
   });
 
-  // 6-digit Passcode state
-  const [passcode, setPasscode] = useState<string>(() => {
-    const saved = localStorage.getItem('classtime_passcode');
-    if (saved && /^\d{6}$/.test(saved)) return saved;
-    return '123456';
+  // 8-digit Role Passcodes state (student: 12345678, instructor: 28687870, admin: 28687870)
+  const DEFAULT_ROLE_PASSCODES: Record<UserRole, string> = {
+    student: '12345678',
+    instructor: '28687870',
+    admin: '28687870',
+  };
+
+  const [passcodes, setPasscodes] = useState<Record<UserRole, string>>(() => {
+    try {
+      const saved = localStorage.getItem('classtime_role_passcodes');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          student: /^\d{8}$/.test(parsed?.student) ? parsed.student : DEFAULT_ROLE_PASSCODES.student,
+          instructor: /^\d{8}$/.test(parsed?.instructor) ? parsed.instructor : DEFAULT_ROLE_PASSCODES.instructor,
+          admin: /^\d{8}$/.test(parsed?.admin) ? parsed.admin : DEFAULT_ROLE_PASSCODES.admin,
+        };
+      }
+    } catch {
+      // ignore parse errors
+    }
+    return DEFAULT_ROLE_PASSCODES;
   });
+
+  const passcode = passcodes[role] || DEFAULT_ROLE_PASSCODES.student;
 
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
     return sessionStorage.getItem('classtime_unlocked') === 'true';
@@ -434,8 +455,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [accessLogs]);
 
   useEffect(() => {
-    localStorage.setItem('classtime_passcode', passcode);
-  }, [passcode]);
+    localStorage.setItem('classtime_role_passcodes', JSON.stringify(passcodes));
+  }, [passcodes]);
 
   // Helper to record an access log entry
   const addAccessLog = (customAction?: string, customPageId?: string) => {
@@ -483,9 +504,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addAccessLog(`'${pageTitle}' 화면 열람 및 조회`, activeTab);
   }, [activeTab, role, selectedInstructorId, selectedStudentId, isUnlocked]);
 
-  // 6-digit Passcode handlers
-  const unlockApp = (pin: string): boolean => {
-    if (pin === passcode) {
+  // 8-digit Role Passcode handlers
+  const unlockApp = (pin: string, targetRole?: UserRole): boolean => {
+    const activeRole = targetRole || role;
+    const expectedPin = passcodes[activeRole];
+    if (pin === expectedPin) {
       setIsUnlocked(true);
       sessionStorage.setItem('classtime_unlocked', 'true');
       return true;
@@ -498,13 +521,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     sessionStorage.removeItem('classtime_unlocked');
   };
 
-  const updatePasscode = (newPin: string): { success: boolean; message: string } => {
-    if (!/^\d{6}$/.test(newPin)) {
-      return { success: false, message: '비밀번호는 숫자 6자리로 입력해야 합니다.' };
+  const ROLE_LABEL_MAP: Record<UserRole, string> = {
+    student: '학생',
+    instructor: '교관',
+    admin: '관리자',
+  };
+
+  const updateRolePasscode = (targetRole: UserRole, newPin: string): { success: boolean; message: string } => {
+    if (!/^\d{8}$/.test(newPin)) {
+      return { success: false, message: `${ROLE_LABEL_MAP[targetRole]} 비밀번호는 숫자 8자리로 입력해야 합니다.` };
     }
-    setPasscode(newPin);
-    localStorage.setItem('classtime_passcode', newPin);
-    return { success: true, message: `6자리 접속 비밀번호가 '${newPin}'(으)로 변경되었습니다.` };
+    setPasscodes(prev => {
+      const updated = { ...prev, [targetRole]: newPin };
+      localStorage.setItem('classtime_role_passcodes', JSON.stringify(updated));
+      return updated;
+    });
+    return {
+      success: true,
+      message: `${ROLE_LABEL_MAP[targetRole]} 접속 8자리 비밀번호가 '${newPin}'(으)로 변경되었습니다.`,
+    };
+  };
+
+  const updatePasscode = (newPin: string, targetRole?: UserRole): { success: boolean; message: string } => {
+    return updateRolePasscode(targetRole || role, newPin);
   };
 
   // Program (5+ 과정) handlers
@@ -1330,7 +1369,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setPrograms(INITIAL_PROGRAMS);
     setAbsences(INITIAL_ABSENCES);
     setAccessLogs(INITIAL_ACCESS_LOGS);
-    setPasscode('123456');
+    setPasscodes(DEFAULT_ROLE_PASSCODES);
+    localStorage.removeItem('classtime_role_passcodes');
     localStorage.removeItem('classtime_courses');
     localStorage.removeItem('classtime_instructors');
     localStorage.removeItem('classtime_students');
@@ -1411,10 +1451,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         reviews,
         materials,
         passcode,
+        passcodes,
         isUnlocked,
         unlockApp,
         lockApp,
         updatePasscode,
+        updateRolePasscode,
         programs,
         addProgram,
         updateProgram,
