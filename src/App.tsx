@@ -35,6 +35,10 @@ const MainContent: React.FC = () => {
   const currentInstructor = instructors.find(i => i.id === selectedInstructorId);
   const hasDangerInstructor = allInstructorWorkloads.some(w => w.status === 'danger');
 
+  React.useEffect(() => {
+    document.title = 'APP program - ClassTime 강의 시간표 및 수강신청 시스템';
+  }, []);
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors">
       <Header />
@@ -103,6 +107,7 @@ const MainContent: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <span className="font-bold text-slate-600 dark:text-slate-300">ClassTime</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300">APP program</span>
             <span>·</span>
             <span>강의시간표 및 수강신청 통합 관리 시스템</span>
           </div>

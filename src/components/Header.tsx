@@ -78,9 +78,14 @@ export const Header: React.FC = () => {
             <Calendar className="w-5 h-5" />
           </div>
           <div className="flex flex-col">
-            <span className="text-base font-bold tracking-tight text-slate-900 dark:text-slate-100 whitespace-nowrap leading-none">
-              ClassTime
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-base font-bold tracking-tight text-slate-900 dark:text-slate-100 whitespace-nowrap leading-none">
+                ClassTime
+              </span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800 tracking-wide">
+                APP program
+              </span>
+            </div>
             <span className="text-[10px] text-slate-400 font-medium tracking-tight mt-0.5">
               강의시간표 & 수강 통계
             </span>
