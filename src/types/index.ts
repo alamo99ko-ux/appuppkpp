@@ -29,6 +29,8 @@ export interface CourseColor {
   lightBg: string;
 }
 
+export type CourseEnrollmentStatus = 'available' | 'closed' | 'waitlist';
+
 export interface Course {
   id: string;
   code: string;
@@ -44,6 +46,16 @@ export interface Course {
   maxCapacity: number;
   description: string;
   color: CourseColor;
+  status?: CourseEnrollmentStatus; // 'available' (신청가능) | 'closed' (마감) | 'waitlist' (대기중)
+  waitlistCapacity?: number;
+}
+
+export interface WaitlistEntry {
+  id: string;
+  courseId: string;
+  studentId: string;
+  waitNumber: number;
+  appliedAt: string;
 }
 
 export interface InstructorWorkloadStatus {
@@ -73,4 +85,36 @@ export interface Enrollment {
 export interface TimeSlot {
   startHour: number;
   label: string;
+}
+
+export interface CourseReview {
+  id: string;
+  courseId: string;
+  studentId: string;
+  studentName: string;
+  rating: number; // 1 to 5
+  comment: string;
+  tags?: string[];
+  isAnonymous?: boolean;
+  createdAt: string;
+}
+
+export type MaterialCategory = '강의계획서' | '수업유인물' | '실습자료' | '과제안내' | '참고자료';
+
+export interface CourseMaterial {
+  id: string;
+  courseId: string;
+  courseName: string;
+  courseCode: string;
+  instructorId: string;
+  instructorName: string;
+  title: string;
+  category: MaterialCategory;
+  description: string;
+  fileName: string;
+  fileSize: string;
+  fileFormat: 'PDF' | 'HWP' | 'PPTX' | 'ZIP' | 'XLSX' | 'DOCX';
+  downloadCount: number;
+  uploadedAt: string;
+  contentPreview?: string;
 }

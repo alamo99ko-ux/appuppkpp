@@ -45,6 +45,7 @@ export const Header: React.FC = () => {
   const navItems = [
     { id: 'timetable', label: '강의시간표' },
     { id: 'enrollment', label: '수강신청' },
+    { id: 'materials', label: '강의자료실' },
     { id: 'instructor_schedule', label: '교관일정' },
     { id: 'student_schedule', label: '학생일정' },
     { id: 'scheduler_studio', label: '편성스케줄러' },

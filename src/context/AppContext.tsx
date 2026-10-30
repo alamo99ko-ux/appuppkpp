@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { Course, Instructor, Student, Enrollment, UserRole, DayOfWeek, InstructorWorkloadStatus } from '../types';
-import { INITIAL_COURSES, INITIAL_INSTRUCTORS, INITIAL_STUDENTS, INITIAL_ENROLLMENTS, COLOR_PALETTES } from '../data/mockData';
+import { Course, Instructor, Student, Enrollment, UserRole, DayOfWeek, InstructorWorkloadStatus, WaitlistEntry, CourseEnrollmentStatus, CourseReview, CourseMaterial } from '../types';
+import { INITIAL_COURSES, INITIAL_INSTRUCTORS, INITIAL_STUDENTS, INITIAL_ENROLLMENTS, INITIAL_WAITLISTS, INITIAL_REVIEWS, INITIAL_MATERIALS, COLOR_PALETTES } from '../data/mockData';
 
 export const MAX_DAILY_INSTRUCTOR_HOURS = 6;
 export const MAX_WEEKLY_INSTRUCTOR_HOURS = 20;
@@ -87,6 +87,7 @@ export interface AppContextType {
   instructors: Instructor[];
   students: Student[];
   enrollments: Enrollment[];
+  waitlists: WaitlistEntry[];
   
   // Operations
   addCourse: (courseData: Omit<Course, 'id' | 'color' | 'durationHours'> & { colorIndex?: number }, forceAllowOverload?: boolean) => { success: boolean; message?: string; isWarning?: boolean };
@@ -102,6 +103,14 @@ export interface AppContextType {
   checkStudentTimeClash: (course: Course, studentId: string) => { hasClash: boolean; conflictingCourse?: Course };
   checkInstructorTimeClash: (day: DayOfWeek, startTime: string, endTime: string, instructorId: string, excludeCourseId?: string) => { hasClash: boolean; conflictingCourse?: Course };
   checkRoomConflict: (day: DayOfWeek, startTime: string, endTime: string, room: string, excludeCourseId?: string) => { hasClash: boolean; conflictingCourse?: Course };
+  
+  // Waitlist / 대기 신청 & Course Status helpers
+  addToWaitlist: (courseId: string, studentId: string) => { success: boolean; message: string };
+  cancelWaitlist: (courseId: string, studentId: string) => { success: boolean; message: string };
+  isStudentWaitlisted: (courseId: string, studentId: string) => boolean;
+  getCourseWaitlistCount: (courseId: string) => number;
+  getStudentWaitlistPosition: (courseId: string, studentId: string) => number | null;
+  getCourseEffectiveStatus: (course: Course, studentId?: string) => CourseEnrollmentStatus;
   
   // Instructor / 교관 management & Excel bulk upload
   addInstructor: (instructorData: Omit<Instructor, 'id' | 'avatarBg'>) => void;
@@ -130,6 +139,25 @@ export interface AppContextType {
   categoryStats: CategoryStatItem[];
   dayStats: DayStatItem[];
   
+  // Course Evaluation & Reviews / 강의 평가 시스템
+  reviews: CourseReview[];
+  addReview: (reviewData: Omit<CourseReview, 'id' | 'createdAt'>) => { success: boolean; message: string };
+  updateReview: (review: CourseReview) => { success: boolean; message: string };
+  deleteReview: (reviewId: string) => void;
+  getCourseReviews: (courseId: string) => CourseReview[];
+  getCourseRatingStats: (courseId: string) => { average: number; count: number; distribution: Record<number, number> };
+  getStudentCourseReview: (courseId: string, studentId: string) => CourseReview | undefined;
+  getInstructorAverageRating: (instructorId: string) => { average: number; count: number };
+
+  // Course Materials / 강의 자료실
+  materials: CourseMaterial[];
+  addMaterial: (data: Omit<CourseMaterial, 'id' | 'uploadedAt' | 'downloadCount'>) => { success: boolean; message: string };
+  updateMaterial: (data: CourseMaterial) => { success: boolean; message: string };
+  deleteMaterial: (materialId: string) => void;
+  incrementDownloadCount: (materialId: string) => void;
+  getCourseMaterials: (courseId: string) => CourseMaterial[];
+  getInstructorMaterials: (instructorId: string) => CourseMaterial[];
+
   // Storage & presets
   resetToDefault: () => void;
   exportDataJson: () => void;
@@ -208,6 +236,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+  const [waitlists, setWaitlists] = useState<WaitlistEntry[]>(() => {
+    try {
+      const saved = localStorage.getItem('classtime_waitlists');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
+      }
+      return INITIAL_WAITLISTS;
+    } catch {
+      return INITIAL_WAITLISTS;
+    }
+  });
+
+  const [reviews, setReviews] = useState<CourseReview[]>(() => {
+    try {
+      const saved = localStorage.getItem('classtime_reviews');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+      return INITIAL_REVIEWS;
+    } catch {
+      return INITIAL_REVIEWS;
+    }
+  });
+
+  const [materials, setMaterials] = useState<CourseMaterial[]>(() => {
+    try {
+      const saved = localStorage.getItem('classtime_materials');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+      return INITIAL_MATERIALS;
+    } catch {
+      return INITIAL_MATERIALS;
+    }
+  });
+
   // Sync dark class on documentElement
   useEffect(() => {
     if (isDarkMode) {
@@ -229,6 +302,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem('classtime_enrollments', JSON.stringify(enrollments));
   }, [enrollments]);
+
+  useEffect(() => {
+    localStorage.setItem('classtime_waitlists', JSON.stringify(waitlists));
+  }, [waitlists]);
+
+  useEffect(() => {
+    localStorage.setItem('classtime_reviews', JSON.stringify(reviews));
+  }, [reviews]);
+
+  useEffect(() => {
+    localStorage.setItem('classtime_materials', JSON.stringify(materials));
+  }, [materials]);
 
   useEffect(() => {
     localStorage.setItem('classtime_instructors', JSON.stringify(instructors));
@@ -581,6 +666,212 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, message: `'${course?.name || '강의'}' 수강신청이 취소되었습니다.` };
   };
 
+  // Waitlist & Course status helpers
+  const isStudentWaitlisted = (courseId: string, studentId: string): boolean => {
+    return waitlists.some(w => w.courseId === courseId && w.studentId === studentId);
+  };
+
+  const getCourseWaitlistCount = (courseId: string): number => {
+    return waitlists.filter(w => w.courseId === courseId).length;
+  };
+
+  const getStudentWaitlistPosition = (courseId: string, studentId: string): number | null => {
+    const courseWaitlist = waitlists
+      .filter(w => w.courseId === courseId)
+      .sort((a, b) => a.waitNumber - b.waitNumber);
+    const index = courseWaitlist.findIndex(w => w.studentId === studentId);
+    return index !== -1 ? index + 1 : null;
+  };
+
+  const getCourseEffectiveStatus = (course: Course, studentId?: string): CourseEnrollmentStatus => {
+    const activeStudentId = studentId || selectedStudentId;
+    if (activeStudentId && isStudentWaitlisted(course.id, activeStudentId)) {
+      return 'waitlist';
+    }
+
+    const enrolledCount = getCourseEnrollmentCount(course.id);
+    const waitlistCount = getCourseWaitlistCount(course.id);
+
+    if (course.status === 'closed') {
+      return 'closed';
+    }
+    if (course.status === 'waitlist') {
+      return 'waitlist';
+    }
+    if (course.status === 'available') {
+      if (enrolledCount >= course.maxCapacity) {
+        return (course.waitlistCapacity && course.waitlistCapacity > 0) ? 'waitlist' : 'closed';
+      }
+      return 'available';
+    }
+
+    if (enrolledCount >= course.maxCapacity) {
+      if ((course.waitlistCapacity ?? 5) > 0 && waitlistCount < (course.waitlistCapacity ?? 5)) {
+        return 'waitlist';
+      }
+      return 'closed';
+    }
+
+    if (waitlistCount > 0) {
+      return 'waitlist';
+    }
+
+    return 'available';
+  };
+
+  const addToWaitlist = (courseId: string, studentId: string): { success: boolean; message: string } => {
+    const course = courses.find(c => c.id === courseId);
+    if (!course) return { success: false, message: '강의를 찾을 수 없습니다.' };
+
+    if (isStudentEnrolled(courseId, studentId)) {
+      return { success: false, message: '이미 수강신청이 완료된 강좌입니다.' };
+    }
+
+    if (isStudentWaitlisted(courseId, studentId)) {
+      return { success: false, message: '이미 대기 신청이 접수된 강좌입니다.' };
+    }
+
+    const currentWaitCount = getCourseWaitlistCount(courseId);
+    const maxWait = course.waitlistCapacity ?? 5;
+    if (maxWait > 0 && currentWaitCount >= maxWait) {
+      return { success: false, message: '대기 정원도 마감되어 추가 신청이 불가능합니다.' };
+    }
+
+    const newWaitNumber = currentWaitCount + 1;
+    const newEntry: WaitlistEntry = {
+      id: `wl-${Date.now()}`,
+      courseId,
+      studentId,
+      waitNumber: newWaitNumber,
+      appliedAt: new Date().toISOString(),
+    };
+
+    setWaitlists(prev => [...prev, newEntry]);
+    return {
+      success: true,
+      message: `'${course.name}' 대기 신청이 접수되었습니다. (대기 순번: ${newWaitNumber}번)`,
+    };
+  };
+
+  const cancelWaitlist = (courseId: string, studentId: string): { success: boolean; message: string } => {
+    const course = courses.find(c => c.id === courseId);
+    const exists = isStudentWaitlisted(courseId, studentId);
+    if (!exists) {
+      return { success: false, message: '대기 신청 내역이 없습니다.' };
+    }
+
+    setWaitlists(prev => {
+      const filtered = prev.filter(w => !(w.courseId === courseId && w.studentId === studentId));
+      let rank = 1;
+      return filtered.map(w => {
+        if (w.courseId === courseId) {
+          return { ...w, waitNumber: rank++ };
+        }
+        return w;
+      });
+    });
+
+    return { success: true, message: `'${course?.name || '강의'}' 대기 신청이 취소되었습니다.` };
+  };
+
+  // Course Evaluation & Reviews / 강의 평가 시스템
+  const addReview = (reviewData: Omit<CourseReview, 'id' | 'createdAt'>): { success: boolean; message: string } => {
+    const existing = reviews.find(r => r.courseId === reviewData.courseId && r.studentId === reviewData.studentId);
+    if (existing) {
+      return { success: false, message: '이미 이 과목에 대한 강의 평가를 등록하셨습니다. 기존 평가를 수정해주세요.' };
+    }
+    const newReview: CourseReview = {
+      ...reviewData,
+      id: `rev-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      createdAt: new Date().toISOString(),
+    };
+    setReviews(prev => [newReview, ...prev]);
+    return { success: true, message: '강의 평가가 성공적으로 등록되었습니다.' };
+  };
+
+  const updateReview = (updatedReview: CourseReview): { success: boolean; message: string } => {
+    setReviews(prev => prev.map(r => r.id === updatedReview.id ? { ...updatedReview, createdAt: new Date().toISOString() } : r));
+    return { success: true, message: '강의 평가가 성공적으로 수정되었습니다.' };
+  };
+
+  const deleteReview = (reviewId: string) => {
+    setReviews(prev => prev.filter(r => r.id !== reviewId));
+  };
+
+  const getCourseReviews = (courseId: string): CourseReview[] => {
+    return reviews
+      .filter(r => r.courseId === courseId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  };
+
+  const getCourseRatingStats = (courseId: string) => {
+    const courseReviews = reviews.filter(r => r.courseId === courseId);
+    const count = courseReviews.length;
+    if (count === 0) {
+      return { average: 0, count: 0, distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } };
+    }
+    const totalScore = courseReviews.reduce((sum, r) => sum + r.rating, 0);
+    const average = Number((totalScore / count).toFixed(1));
+    const distribution: Record<number, number> = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    courseReviews.forEach(r => {
+      const star = Math.min(5, Math.max(1, Math.round(r.rating)));
+      distribution[star] = (distribution[star] || 0) + 1;
+    });
+    return { average, count, distribution };
+  };
+
+  const getStudentCourseReview = (courseId: string, studentId: string): CourseReview | undefined => {
+    return reviews.find(r => r.courseId === courseId && r.studentId === studentId);
+  };
+
+  const getInstructorAverageRating = (instructorId: string): { average: number; count: number } => {
+    const instCourseIds = new Set(courses.filter(c => c.instructorId === instructorId).map(c => c.id));
+    const instReviews = reviews.filter(r => instCourseIds.has(r.courseId));
+    if (instReviews.length === 0) return { average: 0, count: 0 };
+    const total = instReviews.reduce((sum, r) => sum + r.rating, 0);
+    return {
+      average: Number((total / instReviews.length).toFixed(1)),
+      count: instReviews.length,
+    };
+  };
+
+  // Course Materials / 강의 자료실
+  const addMaterial = (data: Omit<CourseMaterial, 'id' | 'uploadedAt' | 'downloadCount'>): { success: boolean; message: string } => {
+    const newMat: CourseMaterial = {
+      ...data,
+      id: `mat-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      uploadedAt: new Date().toISOString(),
+      downloadCount: 0,
+    };
+    setMaterials(prev => [newMat, ...prev]);
+    return { success: true, message: `'${data.title}' 자료가 등록되었습니다.` };
+  };
+
+  const updateMaterial = (updated: CourseMaterial): { success: boolean; message: string } => {
+    setMaterials(prev => prev.map(m => m.id === updated.id ? updated : m));
+    return { success: true, message: `'${updated.title}' 자료가 수정되었습니다.` };
+  };
+
+  const deleteMaterial = (materialId: string) => {
+    setMaterials(prev => prev.filter(m => m.id !== materialId));
+  };
+
+  const incrementDownloadCount = (materialId: string) => {
+    setMaterials(prev => prev.map(m => m.id === materialId ? { ...m, downloadCount: m.downloadCount + 1 } : m));
+  };
+
+  const getCourseMaterials = (courseId: string): CourseMaterial[] => {
+    return materials
+      .filter(m => m.courseId === courseId)
+      .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+  };
+
+  const getInstructorMaterials = (instructorId: string): CourseMaterial[] => {
+    return materials
+      .filter(m => m.instructorId === instructorId)
+      .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+  };
+
   const AVATAR_COLORS = ['bg-indigo-600', 'bg-emerald-600', 'bg-rose-600', 'bg-amber-600', 'bg-cyan-600', 'bg-purple-600', 'bg-blue-600', 'bg-teal-600'];
 
   // Instructor / 교관 management
@@ -765,10 +1056,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setInstructors(INITIAL_INSTRUCTORS);
     setStudents(INITIAL_STUDENTS);
     setEnrollments(INITIAL_ENROLLMENTS);
+    setWaitlists(INITIAL_WAITLISTS);
+    setReviews(INITIAL_REVIEWS);
+    setMaterials(INITIAL_MATERIALS);
     localStorage.removeItem('classtime_courses');
     localStorage.removeItem('classtime_instructors');
     localStorage.removeItem('classtime_students');
     localStorage.removeItem('classtime_enrollments');
+    localStorage.removeItem('classtime_waitlists');
+    localStorage.removeItem('classtime_reviews');
+    localStorage.removeItem('classtime_materials');
   };
 
   const exportDataJson = () => {
@@ -777,6 +1074,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       instructors,
       students,
       enrollments,
+      waitlists,
+      reviews,
+      materials,
       exportedAt: new Date().toISOString(),
     };
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
@@ -795,6 +1095,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCourses(data.courses);
         if (Array.isArray(data.instructors)) setInstructors(data.instructors);
         if (Array.isArray(data.students)) setStudents(data.students);
+        if (Array.isArray(data.waitlists)) setWaitlists(data.waitlists);
+        if (Array.isArray(data.reviews)) setReviews(data.reviews);
+        if (Array.isArray(data.materials)) setMaterials(data.materials);
         setEnrollments(data.enrollments);
         return true;
       }
@@ -821,6 +1124,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         instructors,
         students,
         enrollments,
+        waitlists,
+        reviews,
+        materials,
         addCourse,
         updateCourse,
         deleteCourse,
@@ -834,6 +1140,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         checkStudentTimeClash,
         checkInstructorTimeClash,
         checkRoomConflict,
+        addToWaitlist,
+        cancelWaitlist,
+        isStudentWaitlisted,
+        getCourseWaitlistCount,
+        getStudentWaitlistPosition,
+        getCourseEffectiveStatus,
         addInstructor,
         updateInstructor,
         deleteInstructor,
@@ -851,6 +1163,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         studentStats,
         categoryStats,
         dayStats,
+        addReview,
+        updateReview,
+        deleteReview,
+        getCourseReviews,
+        getCourseRatingStats,
+        getStudentCourseReview,
+        getInstructorAverageRating,
+        addMaterial,
+        updateMaterial,
+        deleteMaterial,
+        incrementDownloadCount,
+        getCourseMaterials,
+        getInstructorMaterials,
         resetToDefault,
         exportDataJson,
         importDataJson,

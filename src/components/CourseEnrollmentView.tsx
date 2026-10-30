@@ -1,9 +1,29 @@
 import React, { useState, useMemo } from 'react';
-import { Course, DayOfWeek } from '../types';
+import { Course, DayOfWeek, CourseEnrollmentStatus } from '../types';
 import { useApp } from '../context/AppContext';
-import { Search, Clock, MapPin, User, Users, CheckCircle, AlertTriangle, XCircle, BookOpen, Calendar, ArrowRight } from 'lucide-react';
+import { 
+  Search, 
+  Clock, 
+  MapPin, 
+  User, 
+  Users, 
+  CheckCircle, 
+  CheckCircle2, 
+  AlertTriangle, 
+  XCircle, 
+  BookOpen, 
+  Calendar, 
+  ArrowRight, 
+  Layers, 
+  Lock, 
+  RotateCcw,
+  Sparkles,
+  Star 
+} from 'lucide-react';
 import { CourseModal } from './CourseModal';
 import { DAYS_OF_WEEK } from '../data/mockData';
+
+export type CourseStatusFilter = 'all' | CourseEnrollmentStatus;
 
 export const CourseEnrollmentView: React.FC = () => {
   const {
@@ -18,13 +38,24 @@ export const CourseEnrollmentView: React.FC = () => {
     getStudentEnrolledCourses,
     checkStudentTimeClash,
     setActiveTab,
+    waitlists,
+    addToWaitlist,
+    cancelWaitlist,
+    isStudentWaitlisted,
+    getCourseWaitlistCount,
+    getStudentWaitlistPosition,
+    getCourseEffectiveStatus,
+    getCourseRatingStats,
   } = useApp();
+
+  // Status Filter state: 'all' | 'available' (신청가능) | 'closed' (마감) | 'waitlist' (대기중)
+  const [statusFilter, setStatusFilter] = useState<CourseStatusFilter>('all');
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('전체');
   const [selectedDay, setSelectedDay] = useState<string>('전체');
-  const [sortBy, setSortBy] = useState<'time' | 'capacity' | 'name'>('time');
+  const [sortBy, setSortBy] = useState<'time' | 'capacity' | 'rating' | 'name'>('time');
   
   // Feedback toast
   const [toastMessage, setToastMessage] = useState<{ text: string; isError?: boolean } | null>(null);
@@ -41,6 +72,27 @@ export const CourseEnrollmentView: React.FC = () => {
     const set = new Set(courses.map(c => c.category));
     return ['전체', ...Array.from(set)];
   }, [courses]);
+
+  // Compute live count for each status
+  const statusCounts = useMemo(() => {
+    let available = 0;
+    let closed = 0;
+    let waitlist = 0;
+
+    courses.forEach(c => {
+      const s = getCourseEffectiveStatus(c, selectedStudentId);
+      if (s === 'available') available++;
+      else if (s === 'closed') closed++;
+      else if (s === 'waitlist') waitlist++;
+    });
+
+    return {
+      all: courses.length,
+      available,
+      closed,
+      waitlist,
+    };
+  }, [courses, selectedStudentId, getCourseEffectiveStatus, waitlists]);
 
   const showToast = (text: string, isError = false) => {
     setToastMessage({ text, isError });
@@ -59,9 +111,34 @@ export const CourseEnrollmentView: React.FC = () => {
     showToast(res.message, !res.success);
   };
 
+  const handleApplyWaitlist = (course: Course) => {
+    const res = addToWaitlist(course.id, selectedStudentId);
+    showToast(res.message, !res.success);
+  };
+
+  const handleCancelWaitlist = (course: Course) => {
+    const res = cancelWaitlist(course.id, selectedStudentId);
+    showToast(res.message, !res.success);
+  };
+
+  const resetAllFilters = () => {
+    setStatusFilter('all');
+    setSearchQuery('');
+    setSelectedCategory('전체');
+    setSelectedDay('전체');
+  };
+
   const filteredCourses = useMemo(() => {
     return courses.filter(course => {
-      // Search match
+      // 1. Status Filter (신청가능, 마감, 대기중)
+      if (statusFilter !== 'all') {
+        const effectiveStatus = getCourseEffectiveStatus(course, selectedStudentId);
+        if (effectiveStatus !== statusFilter) {
+          return false;
+        }
+      }
+
+      // 2. Search match
       const query = searchQuery.trim().toLowerCase();
       const matchesSearch =
         !query ||
@@ -70,10 +147,10 @@ export const CourseEnrollmentView: React.FC = () => {
         course.instructorName.toLowerCase().includes(query) ||
         course.room.toLowerCase().includes(query);
 
-      // Category match
+      // 3. Category match
       const matchesCat = selectedCategory === '전체' || course.category === selectedCategory;
 
-      // Day match
+      // 4. Day match
       const matchesDay = selectedDay === '전체' || course.day === selectedDay;
 
       return matchesSearch && matchesCat && matchesDay;
@@ -90,9 +167,26 @@ export const CourseEnrollmentView: React.FC = () => {
         const remB = b.maxCapacity - getCourseEnrollmentCount(b.id);
         return remB - remA;
       }
+      if (sortBy === 'rating') {
+        const ratA = getCourseRatingStats(a.id).average;
+        const ratB = getCourseRatingStats(b.id).average;
+        if (ratB !== ratA) return ratB - ratA;
+        return getCourseRatingStats(b.id).count - getCourseRatingStats(a.id).count;
+      }
       return a.name.localeCompare(b.name);
     });
-  }, [courses, searchQuery, selectedCategory, selectedDay, sortBy, getCourseEnrollmentCount]);
+  }, [
+    courses, 
+    statusFilter, 
+    searchQuery, 
+    selectedCategory, 
+    selectedDay, 
+    sortBy, 
+    selectedStudentId, 
+    getCourseEffectiveStatus, 
+    getCourseEnrollmentCount,
+    waitlists
+  ]);
 
   return (
     <div className="space-y-6">
@@ -183,6 +277,115 @@ export const CourseEnrollmentView: React.FC = () => {
         </div>
       </div>
 
+      {/* Status Filter Toggle Tabs (신청가능, 마감, 대기중) */}
+      <div className="bg-white dark:bg-slate-900 p-2.5 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 no-scrollbar">
+            {/* 전체 */}
+            <button
+              type="button"
+              onClick={() => setStatusFilter('all')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                statusFilter === 'all'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>전체</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                statusFilter === 'all'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+              }`}>
+                {statusCounts.all}
+              </span>
+            </button>
+
+            {/* 신청가능 */}
+            <button
+              type="button"
+              onClick={() => setStatusFilter('available')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                statusFilter === 'available'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>신청가능</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                statusFilter === 'available'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300'
+              }`}>
+                {statusCounts.available}
+              </span>
+            </button>
+
+            {/* 대기중 */}
+            <button
+              type="button"
+              onClick={() => setStatusFilter('waitlist')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                statusFilter === 'waitlist'
+                  ? 'bg-amber-500 text-white shadow-xs'
+                  : 'text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span>대기중</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                statusFilter === 'waitlist'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300'
+              }`}>
+                {statusCounts.waitlist}
+              </span>
+            </button>
+
+            {/* 마감 */}
+            <button
+              type="button"
+              onClick={() => setStatusFilter('closed')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                statusFilter === 'closed'
+                  ? 'bg-slate-700 dark:bg-slate-700 text-white shadow-xs'
+                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>마감</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                statusFilter === 'closed'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+              }`}>
+                {statusCounts.closed}
+              </span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 px-1 justify-between sm:justify-end">
+            <span>
+              선택 상태: <strong className="text-slate-800 dark:text-slate-200">
+                {statusFilter === 'all' ? '전체 강좌' : statusFilter === 'available' ? '신청가능 강좌' : statusFilter === 'waitlist' ? '대기중 강좌' : '마감된 강좌'}
+              </strong> ({filteredCourses.length}개)
+            </span>
+            {statusFilter !== 'all' && (
+              <button
+                type="button"
+                onClick={() => setStatusFilter('all')}
+                className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 ml-1"
+              >
+                <RotateCcw className="w-3 h-3" />
+                초기화
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Search and Filters Bar */}
       <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -207,6 +410,7 @@ export const CourseEnrollmentView: React.FC = () => {
               className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs focus:outline-hidden"
             >
               <option value="time">요일 및 시간순</option>
+              <option value="rating">강의 평점 높은 순 (★)</option>
               <option value="capacity">남은 좌석 많은 순</option>
               <option value="name">과목명 가나다순</option>
             </select>
@@ -253,17 +457,32 @@ export const CourseEnrollmentView: React.FC = () => {
       {/* Courses Catalog Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredCourses.length === 0 ? (
-          <div className="col-span-full py-16 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-400 text-sm">
-            검색 조건에 맞는 개설 강의가 없습니다.
+          <div className="col-span-full py-16 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-400 text-sm space-y-3">
+            <div>
+              {statusFilter !== 'all' 
+                ? `'${statusFilter === 'available' ? '신청가능' : statusFilter === 'waitlist' ? '대기중' : '마감'}' 상태의 조건에 맞는 강좌가 없습니다.` 
+                : '검색 조건에 맞는 개설 강의가 없습니다.'}
+            </div>
+            <button
+              onClick={resetAllFilters}
+              className="px-3 py-1.5 text-xs font-semibold bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 rounded-xl hover:bg-indigo-100 transition-colors inline-flex items-center gap-1.5"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              모든 필터 초기화
+            </button>
           </div>
         ) : (
           filteredCourses.map((course) => {
             const isEnrolled = isStudentEnrolled(course.id, selectedStudentId);
+            const isWaitlisted = isStudentWaitlisted(course.id, selectedStudentId);
+            const waitlistPosition = getStudentWaitlistPosition(course.id, selectedStudentId);
             const enrolledCount = getCourseEnrollmentCount(course.id);
-            const isFull = enrolledCount >= course.maxCapacity;
-            const remaining = course.maxCapacity - enrolledCount;
+            const waitlistCount = getCourseWaitlistCount(course.id);
+            const effectiveStatus = getCourseEffectiveStatus(course, selectedStudentId);
+            const remaining = Math.max(0, course.maxCapacity - enrolledCount);
             const clash = checkStudentTimeClash(course, selectedStudentId);
             const capacityPercent = Math.min(100, Math.round((enrolledCount / course.maxCapacity) * 100));
+            const ratingStats = getCourseRatingStats(course.id);
 
             return (
               <div
@@ -271,6 +490,8 @@ export const CourseEnrollmentView: React.FC = () => {
                 className={`bg-white dark:bg-slate-900 rounded-2xl border transition-all shadow-2xs hover:shadow-md flex flex-col justify-between p-5 ${
                   isEnrolled
                     ? 'border-emerald-300 dark:border-emerald-700 ring-2 ring-emerald-500/10'
+                    : isWaitlisted
+                    ? 'border-amber-300 dark:border-amber-700 ring-2 ring-amber-500/10'
                     : clash.hasClash && !isEnrolled
                     ? 'border-amber-200 dark:border-amber-900/60'
                     : 'border-slate-200 dark:border-slate-800'
@@ -285,20 +506,43 @@ export const CourseEnrollmentView: React.FC = () => {
                       </span>
                       <span>·</span>
                       <span>{course.category}</span>
+                      {ratingStats.count > 0 && (
+                        <>
+                          <span>·</span>
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                            <Star className="w-3 h-3 fill-amber-400" />
+                            {ratingStats.average}
+                            <span className="text-slate-400 font-normal">({ratingStats.count})</span>
+                          </span>
+                        </>
+                      )}
                     </div>
 
+                    {/* Status Badge */}
                     {isEnrolled ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300/80 dark:border-emerald-800">
                         <CheckCircle className="w-3 h-3" />
-                        신청 완료
+                        수강 완료
                       </span>
-                    ) : isFull ? (
-                      <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-500">
-                        정원 마감
+                    ) : isWaitlisted ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300/80 dark:border-amber-800">
+                        <Clock className="w-3 h-3" />
+                        대기 {waitlistPosition}순위
+                      </span>
+                    ) : effectiveStatus === 'available' ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        신청가능 ({remaining}석)
+                      </span>
+                    ) : effectiveStatus === 'waitlist' ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800">
+                        <Clock className="w-3 h-3 text-amber-500" />
+                        대기중 ({waitlistCount}명)
                       </span>
                     ) : (
-                      <span className="font-mono text-[11px] text-slate-500">
-                        잔여 {remaining}석
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                        <Lock className="w-3 h-3 text-slate-400" />
+                        정원 마감
                       </span>
                     )}
                   </div>
@@ -354,6 +598,11 @@ export const CourseEnrollmentView: React.FC = () => {
                       <span className="text-slate-500">수강 정원 현황</span>
                       <span className="font-mono text-slate-700 dark:text-slate-300">
                         {enrolledCount} / {course.maxCapacity}명 ({capacityPercent}%)
+                        {waitlistCount > 0 && (
+                          <span className="ml-1.5 text-amber-600 dark:text-amber-400 font-semibold">
+                            (대기 {waitlistCount}명)
+                          </span>
+                        )}
                       </span>
                     </div>
                     <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
@@ -383,6 +632,7 @@ export const CourseEnrollmentView: React.FC = () => {
                     상세 정보
                   </button>
 
+                  {/* Dynamic Action Buttons based on status & student enrollment */}
                   {isEnrolled ? (
                     <button
                       onClick={() => handleCancel(course)}
@@ -391,20 +641,42 @@ export const CourseEnrollmentView: React.FC = () => {
                       <XCircle className="w-3.5 h-3.5" />
                       수강 취소
                     </button>
+                  ) : isWaitlisted ? (
+                    <button
+                      onClick={() => handleCancelWaitlist(course)}
+                      className="px-3.5 py-1.5 text-xs font-semibold rounded-xl bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-100 transition-colors flex items-center gap-1.5"
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                      대기 취소
+                    </button>
+                  ) : effectiveStatus === 'waitlist' ? (
+                    <button
+                      onClick={() => handleApplyWaitlist(course)}
+                      className="px-4 py-1.5 text-xs font-semibold rounded-xl bg-amber-600 hover:bg-amber-700 text-white transition-colors flex items-center gap-1.5 shadow-2xs"
+                    >
+                      <Clock className="w-3.5 h-3.5" />
+                      대기 신청
+                    </button>
+                  ) : effectiveStatus === 'closed' ? (
+                    <button
+                      disabled
+                      className="px-4 py-1.5 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed flex items-center gap-1.5"
+                    >
+                      <Lock className="w-3.5 h-3.5" />
+                      정원 마감
+                    </button>
                   ) : (
                     <button
                       onClick={() => handleEnroll(course)}
-                      disabled={isFull || clash.hasClash}
+                      disabled={clash.hasClash}
                       className={`px-4 py-1.5 text-xs font-semibold rounded-xl transition-colors flex items-center gap-1.5 shadow-2xs ${
-                        isFull
-                          ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
-                          : clash.hasClash
+                        clash.hasClash
                           ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 cursor-not-allowed'
                           : 'bg-indigo-600 hover:bg-indigo-700 text-white'
                       }`}
                     >
                       <CheckCircle className="w-3.5 h-3.5" />
-                      {isFull ? '마감됨' : clash.hasClash ? '시간 중복' : '수강 신청'}
+                      {clash.hasClash ? '시간 중복' : '수강 신청'}
                     </button>
                   )}
                 </div>

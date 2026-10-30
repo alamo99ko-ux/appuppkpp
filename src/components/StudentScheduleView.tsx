@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { Course } from '../types';
 import { useApp } from '../context/AppContext';
-import { Clock, MapPin, User, BookOpen, Trash2, Printer, PlusCircle, CheckCircle2 } from 'lucide-react';
+import { Clock, MapPin, User, BookOpen, Trash2, Printer, PlusCircle, CheckCircle2, Star, Edit3, MessageSquareQuote, FileText } from 'lucide-react';
 import { CourseModal } from './CourseModal';
+import { CourseEvaluationModal } from './CourseEvaluationModal';
 import { DAYS_OF_WEEK } from '../data/mockData';
 
 export const StudentScheduleView: React.FC = () => {
@@ -13,10 +14,18 @@ export const StudentScheduleView: React.FC = () => {
     getStudentEnrolledCourses,
     cancelEnrollment,
     setActiveTab,
+    getStudentCourseReview,
+    getCourseRatingStats,
+    getCourseMaterials,
   } = useApp();
 
   const [selectedCourseForModal, setSelectedCourseForModal] = useState<Course | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Evaluation modal state
+  const [evaluationCourse, setEvaluationCourse] = useState<Course | null>(null);
+  const [isEvalModalOpen, setIsEvalModalOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const currentStudent = students.find(s => s.id === selectedStudentId) || students[0];
   const enrolledCourses = useMemo(() => {
@@ -33,6 +42,10 @@ export const StudentScheduleView: React.FC = () => {
     return Number(enrolledCourses.reduce((sum, c) => sum + (c.durationHours || 0), 0).toFixed(1));
   }, [enrolledCourses]);
 
+  const reviewedCount = useMemo(() => {
+    return enrolledCourses.filter(c => Boolean(getStudentCourseReview(c.id, currentStudent.id))).length;
+  }, [enrolledCourses, getStudentCourseReview, currentStudent.id]);
+
   const handleDrop = (course: Course) => {
     if (confirm(`'${course.name}' 수강을 취소하시겠습니까?`)) {
       cancelEnrollment(course.id, currentStudent.id);
@@ -43,8 +56,27 @@ export const StudentScheduleView: React.FC = () => {
     window.print();
   };
 
+  const handleOpenEvaluation = (course: Course, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEvaluationCourse(course);
+    setIsEvalModalOpen(true);
+  };
+
+  const handleEvaluationSuccess = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
   return (
     <div className="space-y-6">
+      {/* Toast notification */}
+      {toastMessage && (
+        <div className="fixed top-20 right-6 z-50 bg-slate-900 text-white dark:bg-white dark:text-slate-900 px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 text-xs font-semibold animate-in slide-in-from-top-4 duration-200">
+          <Star className="w-4 h-4 fill-amber-400 text-amber-500" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* Student Banner */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-2xs">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
@@ -70,7 +102,7 @@ export const StudentScheduleView: React.FC = () => {
           </div>
 
           {/* Student Stats & Actions */}
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="p-3 px-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 text-center">
               <div className="text-[11px] text-slate-500 dark:text-slate-400">수강 중인 과목</div>
               <div className="text-xl font-bold font-mono text-slate-900 dark:text-slate-100">
@@ -81,6 +113,12 @@ export const StudentScheduleView: React.FC = () => {
               <div className="text-[11px] text-slate-500 dark:text-slate-400">주당 총 수업시간</div>
               <div className="text-xl font-bold font-mono text-indigo-600 dark:text-indigo-400">
                 {totalWeeklyHours}시간
+              </div>
+            </div>
+            <div className="p-3 px-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 text-center">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">강의 평가 작성</div>
+              <div className="text-xl font-bold font-mono text-amber-600 dark:text-amber-400 flex items-center justify-center gap-1">
+                <span>{reviewedCount}/{enrolledCourses.length}</span>
               </div>
             </div>
             <button
@@ -173,79 +211,172 @@ export const StudentScheduleView: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {enrolledCourses.map((course) => (
-              <div
-                key={course.id}
-                className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 mb-2">
-                    <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
-                      {course.code}
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      신청 완료
-                    </span>
-                  </div>
+            {enrolledCourses.map((course) => {
+              const myReview = getStudentCourseReview(course.id, currentStudent.id);
+              const ratingStats = getCourseRatingStats(course.id);
 
-                  <h4
-                    onClick={() => {
-                      setSelectedCourseForModal(course);
-                      setIsModalOpen(true);
-                    }}
-                    className="text-base font-bold text-slate-900 dark:text-slate-100 hover:text-indigo-600 cursor-pointer transition-colors"
-                  >
-                    {course.name}
-                  </h4>
-
-                  <div className="mt-4 space-y-2 text-xs text-slate-600 dark:text-slate-400">
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                      <span>
-                        매주 <strong>{course.day}요일</strong> {course.startTime} ~ {course.endTime}
-                        <span className="font-mono text-slate-400 ml-1">({course.durationHours}h)</span>
+              return (
+                <div
+                  key={course.id}
+                  className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 mb-2">
+                      <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                        {course.code}
                       </span>
+                      <div className="flex items-center gap-2">
+                        {ratingStats.count > 0 && (
+                          <span className="inline-flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400 font-semibold">
+                            <Star className="w-3.5 h-3.5 fill-amber-400" />
+                            {ratingStats.average} ({ratingStats.count})
+                          </span>
+                        )}
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          신청 완료
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                      <span>{course.room}</span>
+
+                    <h4
+                      onClick={() => {
+                        setSelectedCourseForModal(course);
+                        setIsModalOpen(true);
+                      }}
+                      className="text-base font-bold text-slate-900 dark:text-slate-100 hover:text-indigo-600 cursor-pointer transition-colors"
+                    >
+                      {course.name}
+                    </h4>
+
+                    <div className="mt-3.5 space-y-2 text-xs text-slate-600 dark:text-slate-400">
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                        <span>
+                          매주 <strong>{course.day}요일</strong> {course.startTime} ~ {course.endTime}
+                          <span className="font-mono text-slate-400 ml-1">({course.durationHours}h)</span>
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                        <span>{course.room}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <User className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                        <span>{course.instructorName}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <User className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                      <span>{course.instructorName}</span>
+
+                    {/* Course Evaluation Status / Card Section */}
+                    <div className="mt-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-800">
+                      {myReview ? (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+                                <span className="flex text-amber-400">
+                                  {Array.from({ length: 5 }).map((_, i) => (
+                                    <Star
+                                      key={i}
+                                      className={`w-3.5 h-3.5 ${
+                                        i < myReview.rating ? 'fill-amber-400 text-amber-500' : 'text-slate-300 dark:text-slate-600'
+                                      }`}
+                                    />
+                                  ))}
+                                </span>
+                                <span className="font-bold text-amber-600 dark:text-amber-400 ml-1">
+                                  {myReview.rating}.0
+                                </span>
+                              </span>
+                              <span className="text-[11px] text-slate-400">· 내 평가 완료</span>
+                            </div>
+                            <button
+                              onClick={(e) => handleOpenEvaluation(course, e)}
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                              <span>수정</span>
+                            </button>
+                          </div>
+                          <p className="text-xs text-slate-600 dark:text-slate-300 italic line-clamp-2">
+                            "{myReview.comment}"
+                          </p>
+                          {myReview.tags && myReview.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 pt-1">
+                              {myReview.tags.map(tag => (
+                                <span key={tag} className="text-[10px] px-2 py-0.5 rounded-md bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-slate-600">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-xs text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                            <MessageSquareQuote className="w-4 h-4 text-amber-500 shrink-0" />
+                            <span>강의 수강 후 별점과 피드백을 남겨주세요</span>
+                          </div>
+                          <button
+                            onClick={(e) => handleOpenEvaluation(course, e)}
+                            className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold flex items-center gap-1 shadow-2xs shrink-0 transition-colors"
+                          >
+                            <Star className="w-3 h-3 fill-white" />
+                            <span>강의 평가</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
 
-                <div className="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                  <button
-                    onClick={() => {
-                      setSelectedCourseForModal(course);
-                      setIsModalOpen(true);
-                    }}
-                    className="text-xs font-medium text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
-                  >
-                    강의계획서 보기
-                  </button>
-                  <button
-                    onClick={() => handleDrop(course)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-xl transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    수강 취소
-                  </button>
+                  <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => {
+                          setSelectedCourseForModal(course);
+                          setIsModalOpen(true);
+                        }}
+                        className="text-xs font-medium text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
+                      >
+                        강의계획서 보기
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('materials')}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline"
+                        title="강의 자료실 이동"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>수업 유인물 ({getCourseMaterials(course.id).length})</span>
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => handleDrop(course)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-xl transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      수강 취소
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
+      {/* Course Detail Modal */}
       <CourseModal
         isOpen={isModalOpen}
         course={selectedCourseForModal}
         onClose={() => setIsModalOpen(false)}
+      />
+
+      {/* Course Evaluation Modal */}
+      <CourseEvaluationModal
+        isOpen={isEvalModalOpen}
+        course={evaluationCourse}
+        onClose={() => setIsEvalModalOpen(false)}
+        onSuccess={handleEvaluationSuccess}
       />
     </div>
   );

@@ -14,6 +14,7 @@ import { StatisticsView } from './components/StatisticsView';
 import { CourseManagementView } from './components/CourseManagementView';
 import { SchedulerStudioView } from './components/SchedulerStudioView';
 import { DataImportExportView } from './components/DataImportExportView';
+import { CourseMaterialsView } from './components/CourseMaterialsView';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { GraduationCap, UserCircle, Settings, Calendar, Clock, BookOpen, AlertOctagon } from 'lucide-react';
 
@@ -91,6 +92,7 @@ const MainContent: React.FC = () => {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 pb-24 md:pb-12">
         {activeTab === 'timetable' && <TimetableView />}
         {activeTab === 'enrollment' && <CourseEnrollmentView />}
+        {activeTab === 'materials' && <CourseMaterialsView />}
         {activeTab === 'instructor_schedule' && <InstructorScheduleView />}
         {activeTab === 'student_schedule' && <StudentScheduleView />}
         {activeTab === 'scheduler_studio' && <SchedulerStudioView />}

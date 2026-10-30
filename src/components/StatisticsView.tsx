@@ -21,7 +21,8 @@ import {
   CalendarRange,
   ArrowRight,
   TrendingUp,
-  Info
+  Info,
+  Star
 } from 'lucide-react';
 import { DayOfWeek } from '../types';
 
@@ -36,13 +37,16 @@ export const StatisticsView: React.FC = () => {
     studentStats,
     categoryStats,
     dayStats,
+    reviews,
+    getCourseRatingStats,
+    getInstructorAverageRating,
     exportDataJson,
     resetToDefault,
     setSelectedInstructorId,
     setActiveTab,
   } = useApp();
 
-  const [activeSubTab, setActiveSubTab] = useState<'instructor' | 'student' | 'category' | 'day'>('instructor');
+  const [activeSubTab, setActiveSubTab] = useState<'instructor' | 'student' | 'category' | 'day' | 'evaluation'>('instructor');
   const [instructorSearch, setInstructorSearch] = useState('');
   const [instructorViewMode, setInstructorViewMode] = useState<'card' | 'table'>('card');
   const [weeksPerYear, setWeeksPerYear] = useState<number>(40); // 40주 연간 훈련 기준
@@ -330,6 +334,16 @@ export const StatisticsView: React.FC = () => {
             }`}
           >
             📅 요일별 시간 분포
+          </button>
+          <button
+            onClick={() => setActiveSubTab('evaluation')}
+            className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap transition-colors cursor-pointer ${
+              activeSubTab === 'evaluation'
+                ? 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-2xs font-bold'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            ⭐ 강의 평가 및 만족도 ({reviews.length}건)
           </button>
         </div>
 
@@ -1053,6 +1067,286 @@ export const StatisticsView: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Tab 5: COURSE EVALUATIONS & SATISFACTION STATS */}
+        {activeSubTab === 'evaluation' && (() => {
+          const totalReviewsCount = reviews.length;
+          const avgScore = totalReviewsCount > 0
+            ? Number((reviews.reduce((sum, r) => sum + r.rating, 0) / totalReviewsCount).toFixed(2))
+            : 0;
+
+          // Star distribution across institution
+          const distribution: Record<number, number> = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+          reviews.forEach(r => {
+            const s = Math.min(5, Math.max(1, Math.round(r.rating)));
+            distribution[s] = (distribution[s] || 0) + 1;
+          });
+
+          // Tag frequencies
+          const tagCounts: Record<string, number> = {};
+          reviews.forEach(r => {
+            (r.tags || []).forEach(t => {
+              tagCounts[t] = (tagCounts[t] || 0) + 1;
+            });
+          });
+          const topTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]);
+
+          // Instructor satisfaction ranking
+          const instructorRankings = instructors.map(inst => {
+            const ratingInfo = getInstructorAverageRating(inst.id);
+            const instCourses = courses.filter(c => c.instructorId === inst.id);
+            return {
+              instructor: inst,
+              coursesCount: instCourses.length,
+              averageRating: ratingInfo.average,
+              reviewCount: ratingInfo.count,
+            };
+          }).sort((a, b) => {
+            if (b.averageRating !== a.averageRating) return b.averageRating - a.averageRating;
+            return b.reviewCount - a.reviewCount;
+          });
+
+          return (
+            <div className="p-6 space-y-6">
+              {/* Evaluation KPIs */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="p-4 rounded-xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/50">
+                  <div className="flex items-center justify-between text-xs text-amber-800 dark:text-amber-300 font-medium mb-1">
+                    <span>전체 강의 평균 만족도</span>
+                    <Star className="w-4 h-4 fill-amber-400 text-amber-500" />
+                  </div>
+                  <div className="text-3xl font-extrabold font-mono text-amber-600 dark:text-amber-400">
+                    ★ {avgScore > 0 ? avgScore : '0.00'}
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1">
+                    5.00점 만점 기준 (총 {totalReviewsCount}건 평가)
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/50">
+                  <div className="text-xs text-emerald-800 dark:text-emerald-300 font-medium mb-1">
+                    만족 이상 (4~5★) 비율
+                  </div>
+                  <div className="text-3xl font-extrabold font-mono text-emerald-600 dark:text-emerald-400">
+                    {totalReviewsCount > 0
+                      ? `${Math.round(((distribution[5] + distribution[4]) / totalReviewsCount) * 100)}%`
+                      : '0%'}
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1">
+                    5점 {distribution[5]}건 · 4점 {distribution[4]}건
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-800/50">
+                  <div className="text-xs text-indigo-800 dark:text-indigo-300 font-medium mb-1">
+                    평가 참여 수강생
+                  </div>
+                  <div className="text-3xl font-extrabold font-mono text-indigo-600 dark:text-indigo-400">
+                    {new Set(reviews.map(r => r.studentId)).size}명
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1">
+                    전체 재학생 대비 높은 피드백 참여율
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-800/50">
+                  <div className="text-xs text-purple-800 dark:text-purple-300 font-medium mb-1">
+                    최다 호평 피드백 키워드
+                  </div>
+                  <div className="text-lg font-bold text-purple-700 dark:text-purple-300 truncate">
+                    {topTags[0] ? `"${topTags[0][0]}"` : '-'}
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1">
+                    {topTags[0] ? `총 ${topTags[0][1]}회 수강생 선택` : '키워드 데이터 없음'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Institution Rating Distribution & Keywords */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Distribution Bars */}
+                <div className="p-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-3">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                    <Star className="w-4 h-4 fill-amber-400 text-amber-500" />
+                    별점 평점별 종합 분포 현황
+                  </h4>
+                  <div className="space-y-2 pt-1 text-xs">
+                    {[5, 4, 3, 2, 1].map(score => {
+                      const count = distribution[score] || 0;
+                      const pct = totalReviewsCount > 0 ? Math.round((count / totalReviewsCount) * 100) : 0;
+                      return (
+                        <div key={score} className="flex items-center gap-3">
+                          <span className="w-12 font-mono font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                            {score}점
+                          </span>
+                          <div className="flex-1 h-3 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                            <div
+                              className="h-full bg-amber-400 rounded-full transition-all"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <span className="w-16 font-mono text-right text-slate-500 dark:text-slate-400">
+                            {count}건 ({pct}%)
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Feedback Keywords Cloud */}
+                <div className="p-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-3">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-indigo-600" />
+                    수강생 추천 키워드 순위
+                  </h4>
+                  {topTags.length === 0 ? (
+                    <div className="text-center py-8 text-xs text-slate-400">등록된 키워드가 없습니다.</div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {topTags.map(([tag, count], idx) => (
+                        <div
+                          key={tag}
+                          className="px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-800 text-indigo-800 dark:text-indigo-200 text-xs flex items-center gap-1.5"
+                        >
+                          <span className="font-semibold">{tag}</span>
+                          <span className="px-1.5 py-0.2 rounded-full bg-indigo-200/70 dark:bg-indigo-800 text-[10px] font-mono">
+                            {count}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Instructor Satisfaction Ranking Table */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <UserCheck className="w-4 h-4 text-indigo-600" />
+                  교관별 강의 만족도 순위 현황
+                </h4>
+                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500">
+                        <th className="py-3 px-4 font-semibold">순위</th>
+                        <th className="py-3 px-4 font-semibold">교관명</th>
+                        <th className="py-3 px-4 font-semibold">소속 학부</th>
+                        <th className="py-3 px-4 font-semibold text-center">개설 과목</th>
+                        <th className="py-3 px-4 font-semibold text-center">평균 만족도 평점</th>
+                        <th className="py-3 px-4 font-semibold text-center">평가 건수</th>
+                        <th className="py-3 px-4 font-semibold text-right">일정 바로가기</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {instructorRankings.map((item, idx) => (
+                        <tr key={item.instructor.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
+                          <td className="py-3 px-4 font-mono font-bold text-slate-400">
+                            #{idx + 1}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="font-bold text-slate-900 dark:text-slate-100">
+                              {item.instructor.name}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-slate-500">
+                            {item.instructor.department}
+                          </td>
+                          <td className="py-3 px-4 font-mono text-center">
+                            {item.coursesCount}과목
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {item.reviewCount > 0 ? (
+                              <span className="inline-flex items-center gap-1 font-bold text-amber-600 dark:text-amber-400">
+                                <Star className="w-3.5 h-3.5 fill-amber-400" />
+                                {item.averageRating}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-mono">-</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 font-mono text-center text-slate-600 dark:text-slate-300">
+                            {item.reviewCount}건
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              onClick={() => {
+                                setSelectedInstructorId(item.instructor.id);
+                                setActiveTab('instructor_schedule');
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 text-[11px] font-semibold transition-colors"
+                            >
+                              일정·평가 보기
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Student Review Feed */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <BookOpen className="w-4 h-4 text-indigo-600" />
+                  실시간 수강생 강의 평가 & 코멘트 피드 ({reviews.length}건)
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {reviews.map(rev => {
+                    const targetCourse = courses.find(c => c.id === rev.courseId);
+                    return (
+                      <div
+                        key={rev.id}
+                        className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-2 shadow-2xs"
+                      >
+                        <div className="flex items-center justify-between text-xs">
+                          <div>
+                            <div className="font-bold text-slate-900 dark:text-slate-100">
+                              {targetCourse?.name || '강의'}
+                            </div>
+                            <div className="text-[11px] text-slate-400">
+                              {targetCourse?.instructorName} · {targetCourse?.category}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="flex items-center gap-1 text-amber-500 font-bold">
+                              <Star className="w-3.5 h-3.5 fill-amber-400" />
+                              <span>{rev.rating}.0</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-mono">
+                              {rev.createdAt.slice(0, 10)}
+                            </div>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed pt-1">
+                          "{rev.comment}"
+                        </p>
+
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px]">
+                          <span className="text-slate-400">
+                            작성자: <strong className="text-slate-600 dark:text-slate-300">{rev.isAnonymous ? '익명 수강생' : rev.studentName}</strong>
+                          </span>
+                          {rev.tags && rev.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {rev.tags.slice(0, 2).map(tag => (
+                                <span key={tag} className="px-1.5 py-0.5 rounded text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

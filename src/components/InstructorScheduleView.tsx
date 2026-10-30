@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Course, Student, DayOfWeek } from '../types';
 import { useApp } from '../context/AppContext';
-import { Clock, MapPin, Users, Mail, Phone, Calendar, ChevronDown, ChevronUp, Printer, BookOpen } from 'lucide-react';
+import { Clock, MapPin, Users, Mail, Phone, Calendar, ChevronDown, ChevronUp, Printer, BookOpen, Star, MessageSquare } from 'lucide-react';
 import { CourseModal } from './CourseModal';
 import { DAYS_OF_WEEK } from '../data/mockData';
 
@@ -14,6 +14,9 @@ export const InstructorScheduleView: React.FC = () => {
     getCourseEnrollmentCount,
     getEnrolledStudentsForCourse,
     getInstructorWorkloadStatus,
+    getInstructorAverageRating,
+    getCourseRatingStats,
+    getCourseReviews,
   } = useApp();
 
   const [expandedCourseId, setExpandedCourseId] = useState<string | null>(null);
@@ -47,6 +50,8 @@ export const InstructorScheduleView: React.FC = () => {
   const totalStudentsEnrolled = useMemo(() => {
     return instructorCourses.reduce((sum, c) => sum + getCourseEnrollmentCount(c.id), 0);
   }, [instructorCourses, getCourseEnrollmentCount]);
+
+  const instructorRating = getInstructorAverageRating(currentInstructor.id);
 
   const toggleStudentList = (courseId: string) => {
     setExpandedCourseId(prev => (prev === courseId ? null : courseId));
@@ -166,6 +171,15 @@ export const InstructorScheduleView: React.FC = () => {
               <div className="text-[10px] text-slate-500 dark:text-slate-400">총 수강생</div>
               <div className="text-lg font-bold font-mono text-slate-800 dark:text-slate-200">
                 {totalStudentsEnrolled}명
+              </div>
+            </div>
+
+            {/* 6. Course Satisfaction Rating */}
+            <div className="p-2.5 px-3.5 rounded-xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/50 text-center">
+              <div className="text-[10px] text-amber-800 dark:text-amber-300 font-medium">⭐ 강의평가 만족도</div>
+              <div className="text-lg font-bold font-mono text-amber-600 dark:text-amber-400 flex items-center justify-center gap-1">
+                <span>★ {instructorRating.count > 0 ? instructorRating.average : '-'}</span>
+                <span className="text-[11px] font-normal text-slate-500">({instructorRating.count}건)</span>
               </div>
             </div>
 
@@ -325,6 +339,12 @@ export const InstructorScheduleView: React.FC = () => {
                           <Users className="w-3.5 h-3.5 text-amber-500" />
                           수강 정원: {enrolledStudents.length} / {course.maxCapacity}명
                         </span>
+                        {getCourseRatingStats(course.id).count > 0 && (
+                          <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-semibold">
+                            <Star className="w-3.5 h-3.5 fill-amber-400" />
+                            ★ {getCourseRatingStats(course.id).average} ({getCourseRatingStats(course.id).count}건)
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -335,9 +355,10 @@ export const InstructorScheduleView: React.FC = () => {
                         setSelectedCourseForModal(course);
                         setIsModalOpen(true);
                       }}
-                      className="px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+                      className="px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-1"
                     >
-                      강의 계획서
+                      <Star className="w-3.5 h-3.5 text-amber-500" />
+                      <span>강의평가·계획서</span>
                     </button>
                     <button
                       onClick={() => toggleStudentList(course.id)}
