@@ -1,0 +1,6 @@
+{
+  "name": "ClassTime - 강의 시간표 및 수강신청 시스템",
+  "description": "강의시간표 생성, 학생 수강신청, 강사 및 학생 맞춤 일정표, 강사별/학생별/과목별 총 수업시간 통계를 제공하는 모바일 반응형 웹앱",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
