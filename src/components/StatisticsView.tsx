@@ -25,6 +25,7 @@ import {
   Star
 } from 'lucide-react';
 import { DayOfWeek } from '../types';
+import { DataActionToolbar } from './DataActionToolbar';
 
 export const StatisticsView: React.FC = () => {
   const {
@@ -230,6 +231,11 @@ export const StatisticsView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Universal Export (Excel/PDF) + Import Template + Import Upload Toolbar */}
+      <DataActionToolbar
+        entityType={activeSubTab === 'student' ? 'student' : activeSubTab === 'instructor' ? 'instructor' : 'course'}
+      />
 
       {/* 4 Core Simultaneous Horizon KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

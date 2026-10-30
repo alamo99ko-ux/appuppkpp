@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { Instructor, Student, Course } from '../types';
+import { DataActionToolbar } from './DataActionToolbar';
 import {
   readExcelFile,
   parseInstructorsExcel,
@@ -259,59 +260,38 @@ export const DataImportExportView: React.FC = () => {
       )}
 
       {/* Top Banner */}
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
               <span>데이터 관리 센터</span>
               <span>·</span>
-              <span>직접 입력 및 엑셀 일괄 업로드</span>
+              <span>엑셀 & PDF 내보내기(Export) / 양식 다운로드 & 엑셀 업로드(Import)</span>
             </div>
             <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-              교관·학생·과목 시간표 데이터 관리
+              교관·학생·과목 시간표 데이터 통합 관리
             </h2>
             <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-              교관 및 학생 명단을 직접 입력하거나 엑셀(.xlsx, .csv) 파일로 한 번에 업로드할 수 있으며, 과목별 수업시간도 일괄 편성할 수 있습니다.
+              각 중요 데이터(교관명단, 학생명단, 강의시간표)를 엑셀(.xlsx) 또는 PDF로 Export 할 수 있으며, 바로 옆의 Import 양식을 내려받아 일괄 업로드할 수 있습니다.
             </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => downloadExcelTemplate(activeTab)}
-              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 transition-colors shadow-2xs"
-            >
-              <Download className="w-4 h-4 text-emerald-600" />
-              <span>{activeTab === 'instructor' ? '교관' : activeTab === 'student' ? '학생' : '강의과목'} 엑셀 양식 다운로드</span>
-            </button>
-            <button
-              onClick={() => {
-                if (activeTab === 'instructor') exportInstructorsExcel(instructors, courses);
-                else if (activeTab === 'student') exportStudentsExcel(students);
-                else exportCoursesExcel(courses);
-              }}
-              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 transition-colors shadow-2xs"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>현재 데이터 엑셀 내보내기</span>
-            </button>
           </div>
         </div>
 
-        {/* Tab Selection */}
-        <div className="flex items-center gap-2 mt-6 pt-5 border-t border-slate-100 dark:border-slate-800 overflow-x-auto no-scrollbar">
+        {/* Tab Selection (Listed visibly side-by-side) */}
+        <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
           <button
             onClick={() => {
               setActiveTab('instructor');
               setParsedPreview(null);
             }}
-            className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-colors whitespace-nowrap ${
+            className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl border transition-colors whitespace-nowrap cursor-pointer ${
               activeTab === 'instructor'
-                ? 'bg-indigo-600 text-white shadow-2xs'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                ? 'bg-indigo-600 border-indigo-600 text-white shadow-2xs'
+                : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
             }`}
           >
-            <Users className="w-4 h-4" />
-            <span>1. 교관(강사) 관리 ({instructors.length}명)</span>
+            {activeTab === 'instructor' ? <Check className="w-4 h-4" /> : <Users className="w-4 h-4" />}
+            <span>1. 교관(강사) 명단 관리 ({instructors.length}명)</span>
           </button>
 
           <button
@@ -319,13 +299,13 @@ export const DataImportExportView: React.FC = () => {
               setActiveTab('student');
               setParsedPreview(null);
             }}
-            className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-colors whitespace-nowrap ${
+            className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl border transition-colors whitespace-nowrap cursor-pointer ${
               activeTab === 'student'
-                ? 'bg-indigo-600 text-white shadow-2xs'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                ? 'bg-indigo-600 border-indigo-600 text-white shadow-2xs'
+                : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
             }`}
           >
-            <GraduationCap className="w-4 h-4" />
+            {activeTab === 'student' ? <Check className="w-4 h-4" /> : <GraduationCap className="w-4 h-4" />}
             <span>2. 학생 명단 관리 ({students.length}명)</span>
           </button>
 
@@ -334,16 +314,19 @@ export const DataImportExportView: React.FC = () => {
               setActiveTab('course');
               setParsedPreview(null);
             }}
-            className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-colors whitespace-nowrap ${
+            className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl border transition-colors whitespace-nowrap cursor-pointer ${
               activeTab === 'course'
-                ? 'bg-indigo-600 text-white shadow-2xs'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                ? 'bg-indigo-600 border-indigo-600 text-white shadow-2xs'
+                : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
             }`}
           >
-            <BookOpen className="w-4 h-4" />
+            {activeTab === 'course' ? <Check className="w-4 h-4" /> : <BookOpen className="w-4 h-4" />}
             <span>3. 강의과목 및 시간 관리 ({courses.length}과목)</span>
           </button>
         </div>
+
+        {/* Universal Side-by-Side Export (Excel / PDF) + Import Template + Import Upload */}
+        <DataActionToolbar entityType={activeTab} />
       </div>
 
       {/* EXCEL UPLOAD DROPZONE */}

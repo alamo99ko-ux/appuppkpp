@@ -2,6 +2,15 @@ export type UserRole = 'admin' | 'instructor' | 'student';
 
 export type DayOfWeek = '월' | '화' | '수' | '목' | '금' | '토';
 
+export interface TrainingProgram {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  targetHours: number;
+  badgeColor: string;
+}
+
 export interface Instructor {
   id: string;
   name: string;
@@ -19,6 +28,8 @@ export interface Student {
   major: string;
   email: string;
   avatarBg: string;
+  programId?: string;
+  programName?: string;
 }
 
 export interface CourseColor {
@@ -36,6 +47,8 @@ export interface Course {
   code: string;
   name: string;
   category: string;
+  programId?: string;
+  programName?: string;
   instructorId: string;
   instructorName: string;
   day: DayOfWeek;
@@ -117,4 +130,44 @@ export interface CourseMaterial {
   downloadCount: number;
   uploadedAt: string;
   contentPreview?: string;
+}
+
+export type AbsenceType = 'instructor_cancel' | 'student_absence';
+export type AbsenceStatus = 'pending' | 'approved' | 'rejected';
+
+export interface AbsenceRequest {
+  id: string;
+  type: AbsenceType; // 'instructor_cancel' (교관 결강·휴강 신청) | 'student_absence' (학생 결석·공결 신청)
+  courseId: string;
+  courseName: string;
+  courseCode: string;
+  programId?: string;
+  programName?: string;
+  applicantRole: 'instructor' | 'student';
+  applicantId: string;
+  applicantName: string;
+  absenceDate: string; // YYYY-MM-DD
+  reasonCategory: string; // 기상악화, 기체정비, 공무출장, 병결, 개인사정, 훈련일정조정 등
+  reasonDetail: string;
+  makeupDate?: string; // 보강 예정일 YYYY-MM-DD
+  makeupStartTime?: string; // HH:mm
+  makeupEndTime?: string;   // HH:mm
+  makeupRoom?: string;
+  status: AbsenceStatus;
+  createdAt: string;
+  processedAt?: string;
+  adminNote?: string;
+}
+
+export interface AccessLogEntry {
+  id: string;
+  timestamp: string;
+  role: UserRole;
+  userId: string;
+  userName: string;
+  departmentOrMajor: string;
+  pageId: string;
+  pageTitle: string;
+  action: string;
+  ipOrDevice: string;
 }

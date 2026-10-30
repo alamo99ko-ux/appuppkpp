@@ -18,9 +18,11 @@ import {
   Lock, 
   RotateCcw,
   Sparkles,
-  Star 
+  Star,
+  Check
 } from 'lucide-react';
 import { CourseModal } from './CourseModal';
+import { DataActionToolbar } from './DataActionToolbar';
 import { DAYS_OF_WEEK } from '../data/mockData';
 
 export type CourseStatusFilter = 'all' | CourseEnrollmentStatus;
@@ -29,6 +31,9 @@ export const CourseEnrollmentView: React.FC = () => {
   const {
     courses,
     students,
+    programs,
+    selectedProgramId,
+    setSelectedProgramId,
     selectedStudentId,
     setSelectedStudentId,
     isStudentEnrolled,
@@ -153,7 +158,10 @@ export const CourseEnrollmentView: React.FC = () => {
       // 4. Day match
       const matchesDay = selectedDay === '전체' || course.day === selectedDay;
 
-      return matchesSearch && matchesCat && matchesDay;
+      // 5. Program match
+      const matchesProg = selectedProgramId === 'all' || course.programId === selectedProgramId;
+
+      return matchesSearch && matchesCat && matchesDay && matchesProg;
     }).sort((a, b) => {
       if (sortBy === 'time') {
         const dayOrder = { 월: 1, 화: 2, 수: 3, 목: 4, 금: 5, 토: 6 };
@@ -181,6 +189,7 @@ export const CourseEnrollmentView: React.FC = () => {
     searchQuery, 
     selectedCategory, 
     selectedDay, 
+    selectedProgramId,
     sortBy, 
     selectedStudentId, 
     getCourseEffectiveStatus, 
@@ -386,9 +395,51 @@ export const CourseEnrollmentView: React.FC = () => {
         </div>
       </div>
 
-      {/* Search and Filters Bar */}
-      <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+      {/* Universal Export/Import Toolbar */}
+      <DataActionToolbar entityType="course" />
+
+      {/* Search and Filters Bar (All options listed visibly as buttons) */}
+      <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3.5">
+        {/* Program Filter Buttons */}
+        <div className="space-y-1.5 pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div className="text-[11px] font-bold text-slate-500">
+            교육과정별 필터 (5개 기본 과정 + 추가 과정 · 선택한 과정만 활성화):
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setSelectedProgramId('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1 ${
+                selectedProgramId === 'all'
+                  ? 'bg-indigo-600 border-indigo-600 text-white shadow-2xs'
+                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+              }`}
+            >
+              {selectedProgramId === 'all' && <Check className="w-3 h-3" />}
+              <span>전체 과정</span>
+            </button>
+            {programs.map(prog => {
+              const active = selectedProgramId === prog.id;
+              return (
+                <button
+                  key={prog.id}
+                  type="button"
+                  onClick={() => setSelectedProgramId(prog.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1 ${
+                    active
+                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-2xs'
+                      : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                  }`}
+                >
+                  {active && <Check className="w-3 h-3" />}
+                  <span>{prog.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           {/* Search box */}
           <div className="relative flex-1">
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -396,55 +447,69 @@ export const CourseEnrollmentView: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="과목명, 과목코드(CS101), 교수명 또는 강의실 검색..."
+              placeholder="과목명, 과목코드(AV101), 교관명 또는 강의실 검색..."
               className="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
             />
           </div>
 
-          {/* Sort selector */}
-          <div className="flex items-center gap-2 text-xs text-slate-500 shrink-0">
-            <span>정렬:</span>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs focus:outline-hidden"
-            >
-              <option value="time">요일 및 시간순</option>
-              <option value="rating">강의 평점 높은 순 (★)</option>
-              <option value="capacity">남은 좌석 많은 순</option>
-              <option value="name">과목명 가나다순</option>
-            </select>
+          {/* Sort buttons (Listed visibly instead of select) */}
+          <div className="flex flex-wrap items-center gap-1.5 text-xs shrink-0">
+            <span className="text-slate-400 text-[11px] font-bold mr-1">정렬 기준:</span>
+            {[
+              { id: 'time', label: '요일·시간순' },
+              { id: 'rating', label: '평점 높은순(★)' },
+              { id: 'capacity', label: '여석 많은순' },
+              { id: 'name', label: '과목명순' },
+            ].map(s => {
+              const active = sortBy === s.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setSortBy(s.id as any)}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center gap-1 ${
+                    active
+                      ? 'bg-slate-900 dark:bg-white border-slate-900 dark:border-white text-white dark:text-slate-900'
+                      : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
+                  }`}
+                >
+                  {active && <Check className="w-3 h-3" />}
+                  <span>{s.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {/* Category Tabs & Day Filter */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
             {categories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
-                className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-colors ${
+                className={`px-3 py-1.5 rounded-lg font-bold border whitespace-nowrap transition-colors flex items-center gap-1 cursor-pointer ${
                   selectedCategory === cat
-                    ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-2xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-2xs'
+                    : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
                 }`}
               >
-                {cat}
+                {selectedCategory === cat && <Check className="w-3 h-3" />}
+                <span>{cat}</span>
               </button>
             ))}
           </div>
 
-          <div className="flex items-center gap-1 overflow-x-auto pb-1 no-scrollbar text-xs">
-            <span className="text-slate-400 text-[11px] mr-1">요일:</span>
+          <div className="flex flex-wrap items-center gap-1 text-xs">
+            <span className="text-slate-400 text-[11px] font-bold mr-1">요일:</span>
             {['전체', ...DAYS_OF_WEEK].map((d) => (
               <button
                 key={d}
                 onClick={() => setSelectedDay(d)}
-                className={`px-2 py-1 rounded-md text-xs transition-colors ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
                   selectedDay === d
-                    ? 'bg-indigo-600 text-white font-bold'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    ? 'bg-indigo-600 border-indigo-600 text-white'
+                    : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
                 }`}
               >
                 {d}

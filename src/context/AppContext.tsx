@@ -1,9 +1,23 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { Course, Instructor, Student, Enrollment, UserRole, DayOfWeek, InstructorWorkloadStatus, WaitlistEntry, CourseEnrollmentStatus, CourseReview, CourseMaterial } from '../types';
-import { INITIAL_COURSES, INITIAL_INSTRUCTORS, INITIAL_STUDENTS, INITIAL_ENROLLMENTS, INITIAL_WAITLISTS, INITIAL_REVIEWS, INITIAL_MATERIALS, COLOR_PALETTES } from '../data/mockData';
+import { Course, Instructor, Student, Enrollment, UserRole, DayOfWeek, InstructorWorkloadStatus, WaitlistEntry, CourseEnrollmentStatus, CourseReview, CourseMaterial, TrainingProgram, AbsenceRequest, AbsenceStatus, AccessLogEntry } from '../types';
+import { INITIAL_COURSES, INITIAL_INSTRUCTORS, INITIAL_STUDENTS, INITIAL_ENROLLMENTS, INITIAL_WAITLISTS, INITIAL_REVIEWS, INITIAL_MATERIALS, INITIAL_PROGRAMS, INITIAL_ABSENCES, INITIAL_ACCESS_LOGS, COLOR_PALETTES } from '../data/mockData';
 
 export const MAX_DAILY_INSTRUCTOR_HOURS = 6;
 export const MAX_WEEKLY_INSTRUCTOR_HOURS = 20;
+
+const PAGE_TITLE_MAP: Record<string, string> = {
+  timetable: '강의시간표 (표·캘린더)',
+  enrollment: '수강신청',
+  absence: '결강·보강신청방',
+  programs: '과정(커리큘럼)관리',
+  materials: '강의자료실',
+  instructor_schedule: '교관일정',
+  student_schedule: '학생일정',
+  scheduler_studio: '편성스케줄러',
+  data_management: '엑셀·PDF·명단관리',
+  statistics: '시수통계',
+  access_logs: '접속로깅방(관리자)',
+};
 
 // Helper to calculate duration in hours between "HH:mm" and "HH:mm"
 export function calculateHours(startTime: string, endTime: string): number {
@@ -79,6 +93,8 @@ export interface AppContextType {
   setSelectedInstructorId: (id: string) => void;
   selectedStudentId: string;
   setSelectedStudentId: (id: string) => void;
+  selectedProgramId: string;
+  setSelectedProgramId: (id: string) => void;
   activeTab: string;
   setActiveTab: (tab: string) => void;
   isDarkMode: boolean;
@@ -89,6 +105,32 @@ export interface AppContextType {
   enrollments: Enrollment[];
   waitlists: WaitlistEntry[];
   
+  // 6-digit Passcode Security Gate
+  passcode: string;
+  isUnlocked: boolean;
+  unlockApp: (pin: string) => boolean;
+  lockApp: () => void;
+  updatePasscode: (newPin: string) => { success: boolean; message: string };
+
+  // Training Programs (5+ 교육과정)
+  programs: TrainingProgram[];
+  addProgram: (data: Omit<TrainingProgram, 'id' | 'badgeColor'>) => { success: boolean; message: string };
+  updateProgram: (updated: TrainingProgram) => { success: boolean; message: string };
+  deleteProgram: (programId: string) => void;
+  bulkAddPrograms: (newPrograms: Omit<TrainingProgram, 'id' | 'badgeColor'>[]) => { addedCount: number };
+
+  // Absence / Make-up Room (결강·보강신청방)
+  absences: AbsenceRequest[];
+  addAbsence: (data: Omit<AbsenceRequest, 'id' | 'createdAt' | 'status'>) => { success: boolean; message: string };
+  updateAbsenceStatus: (absenceId: string, status: AbsenceStatus, adminNote?: string) => void;
+  deleteAbsence: (absenceId: string) => void;
+  bulkAddAbsences: (newAbsences: any[]) => { addedCount: number };
+
+  // Access Logging (교관·학생 페이지 열람 로깅방 - 관리자 전용)
+  accessLogs: AccessLogEntry[];
+  addAccessLog: (action?: string, customPageId?: string) => void;
+  clearAccessLogs: () => void;
+
   // Operations
   addCourse: (courseData: Omit<Course, 'id' | 'color' | 'durationHours'> & { colorIndex?: number }, forceAllowOverload?: boolean) => { success: boolean; message?: string; isWarning?: boolean };
   updateCourse: (course: Course, forceAllowOverload?: boolean) => { success: boolean; message?: string; isWarning?: boolean };
@@ -170,9 +212,66 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [role, setRole] = useState<UserRole>('student');
   const [selectedInstructorId, setSelectedInstructorId] = useState<string>('inst-1');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('stud-1');
+  const [selectedProgramId, setSelectedProgramId] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<string>('timetable');
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     return localStorage.getItem('classtime_theme') === 'dark';
+  });
+
+  // 6-digit Passcode state
+  const [passcode, setPasscode] = useState<string>(() => {
+    const saved = localStorage.getItem('classtime_passcode');
+    if (saved && /^\d{6}$/.test(saved)) return saved;
+    return '123456';
+  });
+
+  const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
+    return sessionStorage.getItem('classtime_unlocked') === 'true';
+  });
+
+  const [programs, setPrograms] = useState<TrainingProgram[]>(() => {
+    try {
+      const saved = localStorage.getItem('classtime_programs');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length >= 1) {
+          return parsed;
+        }
+      }
+      return INITIAL_PROGRAMS;
+    } catch {
+      return INITIAL_PROGRAMS;
+    }
+  });
+
+  const [absences, setAbsences] = useState<AbsenceRequest[]>(() => {
+    try {
+      const saved = localStorage.getItem('classtime_absences');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+      return INITIAL_ABSENCES;
+    } catch {
+      return INITIAL_ABSENCES;
+    }
+  });
+
+  const [accessLogs, setAccessLogs] = useState<AccessLogEntry[]>(() => {
+    try {
+      const saved = localStorage.getItem('classtime_access_logs');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+      return INITIAL_ACCESS_LOGS;
+    } catch {
+      return INITIAL_ACCESS_LOGS;
+    }
   });
 
   const [instructors, setInstructors] = useState<Instructor[]>(() => {
@@ -180,7 +279,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const saved = localStorage.getItem('classtime_instructors');
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Ensure default 9 instructors are active if previously cached legacy data was present
         if (Array.isArray(parsed) && parsed.length >= 9 && parsed.some(i => i.name.includes('고승희'))) {
           return parsed;
         }
@@ -196,7 +294,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const saved = localStorage.getItem('classtime_courses');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.some(c => c.instructorName.includes('고승희'))) {
+        if (Array.isArray(parsed) && parsed.some(c => c.instructorName.includes('고승희')) && parsed.some(c => c.programId)) {
           return parsed;
         }
       }
@@ -211,7 +309,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const saved = localStorage.getItem('classtime_students');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length >= 5) {
+        if (Array.isArray(parsed) && parsed.length >= 5 && parsed.some(s => s.programId)) {
           return parsed;
         }
       }
@@ -322,6 +420,176 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem('classtime_students', JSON.stringify(students));
   }, [students]);
+
+  useEffect(() => {
+    localStorage.setItem('classtime_programs', JSON.stringify(programs));
+  }, [programs]);
+
+  useEffect(() => {
+    localStorage.setItem('classtime_absences', JSON.stringify(absences));
+  }, [absences]);
+
+  useEffect(() => {
+    localStorage.setItem('classtime_access_logs', JSON.stringify(accessLogs));
+  }, [accessLogs]);
+
+  useEffect(() => {
+    localStorage.setItem('classtime_passcode', passcode);
+  }, [passcode]);
+
+  // Helper to record an access log entry
+  const addAccessLog = (customAction?: string, customPageId?: string) => {
+    const pageId = customPageId || activeTab;
+    const pageTitle = PAGE_TITLE_MAP[pageId] || pageId;
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    const deviceLabel = isMobile ? 'Mobile Web (반응형 접속)' : 'PC Web (표준 브라우저 접속)';
+
+    let userId = 'admin-1';
+    let userName = '총괄 관리자';
+    let departmentOrMajor = '교학관리처';
+
+    if (role === 'instructor') {
+      const inst = instructors.find(i => i.id === selectedInstructorId) || instructors[0];
+      userId = inst?.id || 'inst-1';
+      userName = inst?.name || '교관';
+      departmentOrMajor = inst?.department || '항공운항과';
+    } else if (role === 'student') {
+      const stud = students.find(s => s.id === selectedStudentId) || students[0];
+      userId = stud?.id || 'stud-1';
+      userName = stud?.name || '학생';
+      departmentOrMajor = `${stud?.major || '항공운항'} (${stud?.grade || '1학년'})`;
+    }
+
+    const newLog: AccessLogEntry = {
+      id: `log-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toISOString(),
+      role,
+      userId,
+      userName,
+      departmentOrMajor,
+      pageId,
+      pageTitle,
+      action: customAction || `'${pageTitle}' 페이지 열람`,
+      ipOrDevice: deviceLabel,
+    };
+
+    setAccessLogs(prev => [newLog, ...prev.slice(0, 299)]);
+  };
+
+  // Automatically log when an instructor or student opens/switches a page while unlocked
+  useEffect(() => {
+    if (!isUnlocked) return;
+    const pageTitle = PAGE_TITLE_MAP[activeTab] || activeTab;
+    addAccessLog(`'${pageTitle}' 화면 열람 및 조회`, activeTab);
+  }, [activeTab, role, selectedInstructorId, selectedStudentId, isUnlocked]);
+
+  // 6-digit Passcode handlers
+  const unlockApp = (pin: string): boolean => {
+    if (pin === passcode) {
+      setIsUnlocked(true);
+      sessionStorage.setItem('classtime_unlocked', 'true');
+      return true;
+    }
+    return false;
+  };
+
+  const lockApp = () => {
+    setIsUnlocked(false);
+    sessionStorage.removeItem('classtime_unlocked');
+  };
+
+  const updatePasscode = (newPin: string): { success: boolean; message: string } => {
+    if (!/^\d{6}$/.test(newPin)) {
+      return { success: false, message: '비밀번호는 숫자 6자리로 입력해야 합니다.' };
+    }
+    setPasscode(newPin);
+    localStorage.setItem('classtime_passcode', newPin);
+    return { success: true, message: `6자리 접속 비밀번호가 '${newPin}'(으)로 변경되었습니다.` };
+  };
+
+  // Program (5+ 과정) handlers
+  const BADGE_COLORS = ['bg-indigo-600', 'bg-emerald-600', 'bg-amber-600', 'bg-violet-600', 'bg-rose-600', 'bg-cyan-600', 'bg-blue-600', 'bg-teal-600'];
+
+  const addProgram = (data: Omit<TrainingProgram, 'id' | 'badgeColor'>): { success: boolean; message: string } => {
+    const newProg: TrainingProgram = {
+      ...data,
+      id: `prog-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      badgeColor: BADGE_COLORS[programs.length % BADGE_COLORS.length],
+    };
+    setPrograms(prev => [...prev, newProg]);
+    return { success: true, message: `'${data.name}' 과정이 추가되었습니다.` };
+  };
+
+  const updateProgram = (updated: TrainingProgram): { success: boolean; message: string } => {
+    setPrograms(prev => prev.map(p => p.id === updated.id ? updated : p));
+    // Sync programName across courses, students, and absences
+    setCourses(prev => prev.map(c => c.programId === updated.id ? { ...c, programName: updated.name } : c));
+    setStudents(prev => prev.map(s => s.programId === updated.id ? { ...s, programName: updated.name } : s));
+    setAbsences(prev => prev.map(a => a.programId === updated.id ? { ...a, programName: updated.name } : a));
+    return { success: true, message: `과정명이 '${updated.name}'(으)로 변경되었습니다.` };
+  };
+
+  const deleteProgram = (programId: string) => {
+    setPrograms(prev => prev.filter(p => p.id !== programId));
+    if (selectedProgramId === programId) {
+      setSelectedProgramId('all');
+    }
+  };
+
+  const bulkAddPrograms = (newPrograms: Omit<TrainingProgram, 'id' | 'badgeColor'>[]) => {
+    const addedList: TrainingProgram[] = newPrograms.map((data, idx) => ({
+      ...data,
+      id: `prog-${Date.now()}-${idx}`,
+      badgeColor: BADGE_COLORS[(programs.length + idx) % BADGE_COLORS.length],
+    }));
+    setPrograms(prev => [...prev, ...addedList]);
+    return { addedCount: addedList.length };
+  };
+
+  // Absence / Make-up (결강·보강신청방) handlers
+  const addAbsence = (data: Omit<AbsenceRequest, 'id' | 'createdAt' | 'status'>): { success: boolean; message: string } => {
+    const newAbs: AbsenceRequest = {
+      ...data,
+      id: `abs-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      status: role === 'admin' ? 'approved' : 'pending',
+      createdAt: new Date().toISOString(),
+    };
+    setAbsences(prev => [newAbs, ...prev]);
+    addAccessLog(`결강/공결 신청서 등록 (${data.courseName} · ${data.absenceDate})`, 'absence');
+    return {
+      success: true,
+      message: `'${data.courseName}' (${data.absenceDate}) 결강·공결 신청이 등록되었습니다.`,
+    };
+  };
+
+  const updateAbsenceStatus = (absenceId: string, status: AbsenceStatus, adminNote?: string) => {
+    setAbsences(prev =>
+      prev.map(a =>
+        a.id === absenceId
+          ? { ...a, status, processedAt: new Date().toISOString(), adminNote: adminNote ?? a.adminNote }
+          : a
+      )
+    );
+  };
+
+  const deleteAbsence = (absenceId: string) => {
+    setAbsences(prev => prev.filter(a => a.id !== absenceId));
+  };
+
+  const bulkAddAbsences = (newAbsences: any[]) => {
+    const addedList: AbsenceRequest[] = newAbsences.map((item, idx) => ({
+      ...item,
+      id: `abs-${Date.now()}-${idx}`,
+      status: item.status || 'pending',
+      createdAt: new Date().toISOString(),
+    }));
+    setAbsences(prev => [...addedList, ...prev]);
+    return { addedCount: addedList.length };
+  };
+
+  const clearAccessLogs = () => {
+    setAccessLogs([]);
+  };
 
   // Query helpers
   const isStudentEnrolled = (courseId: string, studentId: string): boolean => {
@@ -1059,6 +1327,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setWaitlists(INITIAL_WAITLISTS);
     setReviews(INITIAL_REVIEWS);
     setMaterials(INITIAL_MATERIALS);
+    setPrograms(INITIAL_PROGRAMS);
+    setAbsences(INITIAL_ABSENCES);
+    setAccessLogs(INITIAL_ACCESS_LOGS);
+    setPasscode('123456');
     localStorage.removeItem('classtime_courses');
     localStorage.removeItem('classtime_instructors');
     localStorage.removeItem('classtime_students');
@@ -1066,6 +1338,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.removeItem('classtime_waitlists');
     localStorage.removeItem('classtime_reviews');
     localStorage.removeItem('classtime_materials');
+    localStorage.removeItem('classtime_programs');
+    localStorage.removeItem('classtime_absences');
+    localStorage.removeItem('classtime_access_logs');
   };
 
   const exportDataJson = () => {
@@ -1077,6 +1352,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       waitlists,
       reviews,
       materials,
+      programs,
+      absences,
+      accessLogs,
       exportedAt: new Date().toISOString(),
     };
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
@@ -1098,6 +1376,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (Array.isArray(data.waitlists)) setWaitlists(data.waitlists);
         if (Array.isArray(data.reviews)) setReviews(data.reviews);
         if (Array.isArray(data.materials)) setMaterials(data.materials);
+        if (Array.isArray(data.programs)) setPrograms(data.programs);
+        if (Array.isArray(data.absences)) setAbsences(data.absences);
+        if (Array.isArray(data.accessLogs)) setAccessLogs(data.accessLogs);
         setEnrollments(data.enrollments);
         return true;
       }
@@ -1116,6 +1397,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setSelectedInstructorId,
         selectedStudentId,
         setSelectedStudentId,
+        selectedProgramId,
+        setSelectedProgramId,
         activeTab,
         setActiveTab,
         isDarkMode,
@@ -1127,6 +1410,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         waitlists,
         reviews,
         materials,
+        passcode,
+        isUnlocked,
+        unlockApp,
+        lockApp,
+        updatePasscode,
+        programs,
+        addProgram,
+        updateProgram,
+        deleteProgram,
+        bulkAddPrograms,
+        absences,
+        addAbsence,
+        updateAbsenceStatus,
+        deleteAbsence,
+        bulkAddAbsences,
+        accessLogs,
+        addAccessLog,
+        clearAccessLogs,
         addCourse,
         updateCourse,
         deleteCourse,
